@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
+from .. import __version__
 from ..database import get_db
 from ..services.categorizer import get_rules
 
@@ -161,6 +162,7 @@ async def settings_page(request: Request):
                 "settings": settings,
                 "tx_count": tx_count,
                 "cat_count": cat_count,
+                "app_version": __version__,
             },
         )
     finally:

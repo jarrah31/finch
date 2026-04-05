@@ -3,7 +3,7 @@ name: Build & Push Docker Image
 on:
   push:
     branches: ["main"]
-    tags:     ["v*.*.*"]
+    tags:     ["v*"]
   pull_request:
     branches: ["main"]
 
@@ -48,9 +48,9 @@ jobs:
       # Generates the tags and OCI labels that are applied to the image.
       #
       # Tag strategy:
-      #   push to main          → latest, sha-<short>
-      #   push tag v1.2.3       → 1.2.3, 1.2, latest, sha-<short>
-      #   pull request          → pr-<number>  (built but not pushed)
+      #   push to main       → latest, sha-<short>
+      #   push tag v1.0.0    → v1.0.0, latest, sha-<short>
+      #   pull request       → pr-<number>  (built but not pushed)
       - name: Extract image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -58,8 +58,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            type=ref,event=tag
             type=sha,prefix=sha-,format=short
             type=ref,event=pr
 
