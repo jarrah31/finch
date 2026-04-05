@@ -5,9 +5,12 @@ __pycache__/
 *.egg-info/
 *.pyo
 
-# ── Runtime data (never bake into the image) ──────────────────────────────────
+# ── Runtime data & secrets (never bake into the image) ───────────────────────
 data/
 app/static/logos/*.png
+.env
+.env.local
+.env.*.local
 
 # ── Docs & Claude ─────────────────────────────────────────────────────────────
 docs/

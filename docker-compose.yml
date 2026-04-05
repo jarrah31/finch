@@ -6,24 +6,12 @@ services:
     ports:
       - "8000:8000"
 
+    # Values are read from a .env file in this directory (see .env.example).
+    # Never put real secrets directly in this file.
     environment:
-      # ── User / group mapping ────────────────────────────────────────────────
-      # Set these to your host user's UID/GID so the data volume is
-      # readable/writable without permission problems.
-      # Run: id   to find your UID and GID.
-      PUID: "1000"
-      PGID: "1000"
-
-      # ── Session security ────────────────────────────────────────────────────
-      # Generate a strong key:  python -c "import secrets; print(secrets.token_hex(32))"
-      # If unset the app generates one and stores it in /data/.secret (fine for
-      # single-node use, but sessions reset on container recreation).
-      SECRET_KEY: "change-me-to-a-long-random-string"
-
-      # ── Optional ────────────────────────────────────────────────────────────
-      # DATA_DIR is pre-set to /data in the image; override only if you mount
-      # the volume at a different path inside the container.
-      # DATA_DIR: /data
+      PUID:       "${PUID:-1000}"
+      PGID:       "${PGID:-1000}"
+      SECRET_KEY: "${SECRET_KEY}"   # required — see .env.example
 
     volumes:
       # Host directory (or named volume) where the database, secret key, and

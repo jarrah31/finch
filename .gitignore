@@ -15,5 +15,10 @@ CLAUDE.md
 # Cached merchant logos (downloaded at runtime from Logo.dev)
 app/static/logos/*.png
 
+# Environment / secrets (never commit real values)
+.env
+.env.local
+.env.*.local
+
 # OS
 .DS_Store
