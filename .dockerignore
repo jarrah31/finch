@@ -1,0 +1,39 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.pyo
+
+# ── Runtime data (never bake into the image) ──────────────────────────────────
+data/
+app/static/logos/*.png
+
+# ── Docs & Claude ─────────────────────────────────────────────────────────────
+docs/
+.claude/
+CLAUDE.md
+
+# ── Version control ───────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── Tests & dev tooling ───────────────────────────────────────────────────────
+tests/
+pytest.ini
+*.cfg
+
+# ── Docker files themselves (no recursive COPY risk) ─────────────────────────
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# ── GitHub Actions ────────────────────────────────────────────────────────────
+.github/
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Dev scripts ───────────────────────────────────────────────────────────────
+start.sh

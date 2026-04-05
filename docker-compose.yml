@@ -1,0 +1,52 @@
+services:
+  finance:
+    image: ghcr.io/OWNER/finance:latest   # replace OWNER with your GitHub username
+    # build: .                            # uncomment to build locally instead
+
+    ports:
+      - "8000:8000"
+
+    environment:
+      # ── User / group mapping ────────────────────────────────────────────────
+      # Set these to your host user's UID/GID so the data volume is
+      # readable/writable without permission problems.
+      # Run: id   to find your UID and GID.
+      PUID: "1000"
+      PGID: "1000"
+
+      # ── Session security ────────────────────────────────────────────────────
+      # Generate a strong key:  python -c "import secrets; print(secrets.token_hex(32))"
+      # If unset the app generates one and stores it in /data/.secret (fine for
+      # single-node use, but sessions reset on container recreation).
+      SECRET_KEY: "change-me-to-a-long-random-string"
+
+      # ── Optional ────────────────────────────────────────────────────────────
+      # DATA_DIR is pre-set to /data in the image; override only if you mount
+      # the volume at a different path inside the container.
+      # DATA_DIR: /data
+
+    volumes:
+      # Host directory (or named volume) where the database, secret key, and
+      # any other runtime files are stored.  Create the directory first:
+      #   mkdir -p ./data
+      - ./data:/data
+
+    restart: unless-stopped
+
+    # Defence-in-depth: prevent privilege escalation after the entrypoint
+    # has already dropped to appuser.
+    security_opt:
+      - no-new-privileges:true
+
+    # Trim the Linux capability set to the bare minimum uvicorn needs.
+    cap_drop:
+      - ALL
+
+    healthcheck:
+      test: >
+        python -c
+        "import socket; s=socket.create_connection(('localhost',8000),timeout=5); s.close()"
+      interval: 30s
+      timeout:  5s
+      retries:  3
+      start_period: 15s
