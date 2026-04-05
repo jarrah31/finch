@@ -1,0 +1,1094 @@
+{% extends "base.html" %}
+
+{% block title %}Transactions{% endblock %}
+
+{% block content %}
+<div
+  x-data="{
+    showImport: false,
+    isDragging: false,
+    importQueue: [],   /* [{id, name, size, file, status, result, error}] */
+    importRunning: false,
+    filters: {
+      account_id: '',
+      category_id: (() => { const c = localStorage.getItem('txn_category') || ''; return c === 'uncategorized' ? '' : c; })(),
+      uncategorized: localStorage.getItem('txn_category') === 'uncategorized',
+      pay_period_id: localStorage.getItem('txn_period_id') || '',
+      search: '',
+      search_in: 'both',
+      page: parseInt(localStorage.getItem('txn_page') || '1'),
+      per_page: parseInt(localStorage.getItem('txn_per_page') || '50'),
+      sort_by: 'date',
+      sort_dir: 'desc',
+    },
+    searchTimeout: null,
+    transactions: [],
+    total: 0,
+    pages: 0,
+    loading: false,
+    categories: {{ categories | tojson | forceescape }},
+    accounts: {{ accounts | tojson | forceescape }},
+    periods: {{ periods | tojson | forceescape }},
+    editingCategory: null,
+    logoPk: {{ logodev_pk | tojson | forceescape }},
+
+    /* Logo edit modal */
+    logoModal: { open: false, tx: null, query: '', results: [], searching: false, saving: false, searchTimer: null, error: null },
+
+    /* custom dropdown state */
+    accountDrop: { open: false, search: '', display: 'All accounts' },
+    categoryDrop: { open: false, search: '', display: 'All categories' },
+    periodDrop: { open: false, search: '', display: 'All periods' },
+
+    get queryString() {
+      const params = new URLSearchParams();
+      if (this.filters.account_id) params.set('account_id', this.filters.account_id);
+      if (this.filters.category_id) params.set('category_id', this.filters.category_id);
+      if (this.filters.uncategorized) params.set('uncategorized', 'true');
+      if (this.filters.pay_period_id) params.set('pay_period_id', this.filters.pay_period_id);
+      const trimmedSearch = this.filters.search.trim();
+      if (trimmedSearch) params.set('search', trimmedSearch);
+      if (trimmedSearch) params.set('search_in', this.filters.search_in);
+      if (this.filters.page > 1) params.set('page', this.filters.page);
+      params.set('per_page', this.filters.per_page);
+      params.set('sort_by', this.filters.sort_by);
+      params.set('sort_dir', this.filters.sort_dir);
+      return params.toString();
+    },
+
+    async loadTransactions() {
+      this.loading = true;
+      try {
+        const qs = this.queryString;
+        const resp = await fetch('/api/transactions' + (qs ? '?' + qs : ''));
+        const data = await resp.json();
+        this.transactions = data.transactions;
+        this.total = data.total;
+        this.pages = data.pages;
+      } catch (e) {
+        console.error('Failed to load transactions:', e);
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    resetPage() {
+      this.filters.page = 1;
+      localStorage.setItem('txn_page', '1');
+      this.loadTransactions();
+    },
+
+    onSearchInput() {
+      clearTimeout(this.searchTimeout);
+      this.searchTimeout = setTimeout(() => this.resetPage(), 350);
+    },
+
+    goToPage(p) {
+      if (p < 1 || p > this.pages) return;
+      this.filters.page = p;
+      localStorage.setItem('txn_page', String(p));
+      this.loadTransactions();
+      this.$nextTick(() => document.querySelector('.card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+    },
+
+    sortBy(col) {
+      if (this.filters.sort_by === col) {
+        this.filters.sort_dir = this.filters.sort_dir === 'asc' ? 'desc' : 'asc';
+      } else {
+        this.filters.sort_by = col;
+        this.filters.sort_dir = col === 'date' ? 'desc' : 'asc';
+      }
+      this.filters.page = 1;
+      localStorage.setItem('txn_page', '1');
+      this.loadTransactions();
+    },
+
+    pageRange() {
+      const total = this.pages;
+      const cur = this.filters.page;
+      if (total <= 9) return Array.from({ length: total }, (_, i) => i + 1);
+      const result = [1];
+      if (cur > 4) result.push('...');
+      const start = Math.max(2, cur - 2);
+      const end = Math.min(total - 1, cur + 2);
+      for (let i = start; i <= end; i++) result.push(i);
+      if (cur < total - 3) result.push('...');
+      result.push(total);
+      return result;
+    },
+
+    catDisplayName(cat) {
+      if (!cat) return '';
+      if (cat.parent_id) {
+        const parent = this.categories.find(p => p.id === cat.parent_id);
+        return parent ? parent.name + ' › ' + cat.name : cat.name;
+      }
+      return cat.name;
+    },
+
+    catFilterOptions(search) {
+      const opts = [
+        { id: '', label: 'All categories' },
+        { id: 'uncategorized', label: 'Uncategorized' },
+        ...this.categories.map(c => ({ id: c.id, label: this.catDisplayName(c) }))
+          .sort((a, b) => a.label.localeCompare(b.label)),
+      ];
+      if (!search) return opts;
+      const q = search.toLowerCase();
+      return opts.filter(o => o.label.toLowerCase().includes(q));
+    },
+
+    selectFilter(drop, key, id, label, extra) {
+      this[drop].display = label;
+      this[drop].search = '';
+      this[drop].open = false;
+      if (extra) {
+        Object.assign(this.filters, extra);
+        if ('category_id' in extra || 'uncategorized' in extra)
+          localStorage.setItem('txn_category', extra.uncategorized ? 'uncategorized' : (extra.category_id || ''));
+      } else {
+        this.filters[key] = id;
+        if (key === 'pay_period_id') localStorage.setItem('txn_period_id', String(id));
+      }
+      this.resetPage();
+    },
+
+    formatDate(dateStr) {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    },
+
+    formatAmount(amount) {
+      const abs = Math.abs(amount).toFixed(2);
+      const formatted = parseFloat(abs).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      return (amount < 0 ? '-' : '+') + '£' + formatted;
+    },
+
+    amountClass(amount) {
+      return amount < 0 ? 'amount-negative' : 'amount-positive';
+    },
+
+    startEditCategory(txId) {
+      this.editingCategory = txId;
+    },
+
+    filterByCategory(categoryId, displayLabel) {
+      this.filters.category_id = categoryId;
+      this.filters.uncategorized = false;
+      this.filters.search = '';
+      this.filters.search_in = 'both';
+      this.categoryDrop.display = displayLabel;
+      localStorage.setItem('txn_category', String(categoryId));
+      this.resetPage();
+    },
+
+    async changeCategory(txId, categoryId) {
+      try {
+        const resp = await fetch('/api/transactions/' + txId, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category_id: categoryId === '' ? null : parseInt(categoryId) })
+        });
+        if (resp.ok) {
+          const tx = this.transactions.find(t => t.id === txId);
+          if (tx) {
+            if (categoryId === '') {
+              tx.category_id = null;
+              tx.category_name = null;
+            } else {
+              const cat = this.categories.find(c => c.id === parseInt(categoryId));
+              tx.category_id = cat ? cat.id : null;
+              tx.category_name = cat ? cat.name : null;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to update category:', e);
+      } finally {
+        this.editingCategory = null;
+      }
+    },
+
+    async deleteTransaction(txId) {
+      if (!confirm('Delete this transaction?')) return;
+      try {
+        const resp = await fetch('/api/transactions/' + txId, { method: 'DELETE' });
+        if (resp.ok) {
+          this.transactions = this.transactions.filter(t => t.id !== txId);
+          this.total = Math.max(0, this.total - 1);
+        }
+      } catch (e) {
+        console.error('Failed to delete transaction:', e);
+      }
+    },
+
+    async recategorizeAll() {
+      if (!confirm('Re-categorize all transactions using current rules? Manual overrides will be reset.')) return;
+      try {
+        const resp = await fetch('/api/transactions/recategorize', { method: 'POST' });
+        if (resp.ok) {
+          const data = await resp.json();
+          alert('Re-categorized ' + data.categorized + ' transaction(s).');
+          this.loadTransactions();
+        }
+      } catch (e) {
+        console.error('Failed to recategorize:', e);
+      }
+    },
+
+    fmtImportDate(iso) {
+      if (!iso) return '';
+      const [y, m, d] = iso.split('-');
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      return `${d} ${months[parseInt(m,10)-1]} ${y}`;
+    },
+
+    fmtFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    },
+
+    get importAllDone() {
+      return this.importQueue.length > 0 &&
+        this.importQueue.every(f => f.status === 'done' || f.status === 'error');
+    },
+
+    get importTotals() {
+      return this.importQueue.filter(f => f.status === 'done').reduce(
+        (acc, f) => ({
+          inserted:    acc.inserted    + (f.result?.inserted    || 0),
+          skipped:     acc.skipped     + (f.result?.skipped     || 0),
+          categorized: acc.categorized + (f.result?.categorized || 0),
+          min_date: (!acc.min_date || (f.result?.min_date && f.result.min_date < acc.min_date)) ? (f.result?.min_date || acc.min_date) : acc.min_date,
+          max_date: (!acc.max_date || (f.result?.max_date && f.result.max_date > acc.max_date)) ? (f.result?.max_date || acc.max_date) : acc.max_date,
+        }),
+        { inserted: 0, skipped: 0, categorized: 0, min_date: null, max_date: null }
+      );
+    },
+
+    addFilesToQueue(files) {
+      let added = 0;
+      for (const f of files) {
+        if (!f.name.endsWith('.csv') && f.type !== 'text/csv') continue;
+        this.importQueue.push({ id: Date.now() + Math.random(), name: f.name, size: f.size, file: f, status: 'pending', result: null, error: null });
+        added++;
+      }
+      if (added && !this.importRunning) this.processImportQueue();
+    },
+
+    async processImportQueue() {
+      this.importRunning = true;
+      while (true) {
+        const item = this.importQueue.find(i => i.status === 'pending');
+        if (!item) break;
+        item.status = 'importing';
+        try {
+          const fd = new FormData();
+          fd.append('file', item.file);
+          const resp = await fetch('/api/transactions/import', { method: 'POST', body: fd });
+          if (resp.ok) {
+            item.result = await resp.json();
+            item.status = 'done';
+          } else {
+            const err = await resp.json().catch(() => ({}));
+            item.error = err.detail || 'Import failed — check your CSV format.';
+            item.status = 'error';
+          }
+        } catch (e) {
+          item.error = 'Network error during import.';
+          item.status = 'error';
+        }
+      }
+      this.importRunning = false;
+      this.loadTransactions();
+    },
+
+    removeFromQueue(id) {
+      this.importQueue = this.importQueue.filter(f => f.id !== id);
+    },
+
+    clearCompletedImports() {
+      this.importQueue = this.importQueue.filter(f => f.status === 'pending' || f.status === 'importing');
+    },
+
+    handleDrop(event) {
+      this.isDragging = false;
+      this.addFilesToQueue(Array.from(event.dataTransfer.files));
+    },
+
+    handleFileInput(event) {
+      this.addFilesToQueue(Array.from(event.target.files));
+      event.target.value = '';
+    },
+
+    /* ── Logo edit modal ───────────────────────────────────────── */
+    openLogoEdit(tx) {
+      /* Pre-fill search with merchant name if known; otherwise leave blank for user to type */
+      const initialQuery = tx.merchant_name || (tx.merchant_domain ? tx.merchant_domain.split('.')[0] : '');
+      this.logoModal = { open: true, tx, query: initialQuery, results: [], searching: false, saving: false, searchTimer: null, error: null };
+      this.$nextTick(() => {
+        document.getElementById('logo-search-input')?.focus();
+        if (initialQuery.trim()) this.searchLogos(initialQuery);
+      });
+    },
+
+    closeLogoModal() {
+      clearTimeout(this.logoModal.searchTimer);
+      this.logoModal.open = false;
+    },
+
+    async searchLogos(q) {
+      if (!q.trim()) { this.logoModal.results = []; return; }
+      this.logoModal.searching = true;
+      this.logoModal.error = null;
+      try {
+        const resp = await fetch('/api/logodev/search?q=' + encodeURIComponent(q));
+        if (resp.ok) {
+          const data = await resp.json();
+          this.logoModal.results = data.results || [];
+        } else {
+          const err = await resp.json().catch(() => ({}));
+          this.logoModal.error = err.detail || 'Search failed';
+          this.logoModal.results = [];
+        }
+      } catch (e) {
+        this.logoModal.error = 'Search failed — check your connection';
+        this.logoModal.results = [];
+      } finally {
+        this.logoModal.searching = false;
+      }
+    },
+
+    onLogoSearchInput() {
+      clearTimeout(this.logoModal.searchTimer);
+      this.logoModal.searchTimer = setTimeout(() => this.searchLogos(this.logoModal.query), 350);
+    },
+
+    async saveLogoOverride(domain) {
+      if (!this.logoModal.tx || this.logoModal.saving) return;
+      this.logoModal.saving = true;
+      try {
+        const resp = await fetch('/api/merchant-overrides', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description_key: this.logoModal.tx.merchant_description_key, domain: domain || null })
+        });
+        if (resp.ok) {
+          /* Update every visible row that shares the same description key */
+          const key = this.logoModal.tx.merchant_description_key;
+          this.transactions.forEach(t => {
+            if (t.merchant_description_key === key) {
+              t.merchant_domain = domain || null;
+              t.merchant_overridden = !!domain;
+            }
+          });
+          this.closeLogoModal();
+        }
+      } finally {
+        this.logoModal.saving = false;
+      }
+    }
+  }"
+  x-init="
+    (function() {
+      const savedCat = localStorage.getItem('txn_category') || '';
+      if (savedCat === 'uncategorized') { categoryDrop.display = 'Uncategorized'; }
+      else if (savedCat) { const cat = categories.find(c => c.id == savedCat); if (cat) categoryDrop.display = catDisplayName(cat); }
+      const savedPeriod = localStorage.getItem('txn_period_id') || '';
+      if (savedPeriod) { const p = periods.find(p => p.id == savedPeriod); if (p) periodDrop.display = p.label; }
+    })();
+    loadTransactions();
+  "
+>
+
+  <style>
+    .amount-positive { transition: filter 0.25s ease; }
+    [data-privacy] .amount-positive { filter: blur(8px); user-select: none; }
+  </style>
+
+  <!-- Page Header -->
+  <div class="page-header">
+    <h1 class="page-title">Transactions</h1>
+    <div class="page-actions">
+      <button
+        class="btn btn-secondary"
+        @click="showImport = !showImport"
+        :aria-expanded="showImport"
+        aria-controls="import-area"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Import CSV
+      </button>
+      <button
+        class="btn btn-secondary"
+        @click="recategorizeAll()"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+        Re-categorize All
+      </button>
+    </div>
+  </div>
+
+  <!-- CSV Import Area -->
+  <div
+    id="import-area"
+    x-show="showImport"
+    x-transition:enter="transition ease-out duration-200"
+    x-transition:enter-start="opacity-0 transform -translate-y-2"
+    x-transition:enter-end="opacity-100 transform translate-y-0"
+    x-transition:leave="transition ease-in duration-150"
+    x-transition:leave-start="opacity-100"
+    x-transition:leave-end="opacity-0"
+    class="card"
+    style="margin-bottom: 1.5rem;"
+  >
+    <div class="card-header">
+      <h2 class="card-title">Import CSV</h2>
+      <button class="btn-icon" @click="showImport = false" aria-label="Close import area">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="card-body">
+      <!-- Drop zone — always visible while import panel is open -->
+      <label
+        class="drop-zone"
+        :class="{ 'drop-zone--active': isDragging }"
+        @dragover.prevent="isDragging = true"
+        @dragleave.prevent="isDragging = false"
+        @drop.prevent="handleDrop($event)"
+        for="csv-file-input"
+        role="button"
+        tabindex="0"
+        @keydown.enter.prevent="$refs.fileInput.click()"
+        @keydown.space.prevent="$refs.fileInput.click()"
+        aria-label="Drop CSV files here or click to browse"
+      >
+        <input
+          id="csv-file-input"
+          x-ref="fileInput"
+          type="file"
+          accept=".csv,text/csv"
+          multiple
+          class="drop-zone__input"
+          @change="handleFileInput($event)"
+          aria-hidden="true"
+        >
+        <div class="drop-zone__content">
+          <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="drop-zone__icon" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <p class="drop-zone__text">
+            <span x-text="isDragging ? 'Release to upload' : 'Drag &amp; drop one or more CSV files'"></span>
+          </p>
+          <p class="drop-zone__subtext">or <span class="drop-zone__browse">click to browse</span></p>
+        </div>
+      </label>
+
+      <!-- Per-file queue -->
+      <template x-if="importQueue.length > 0">
+        <div class="import-queue" role="list" aria-label="Import queue" aria-live="polite">
+
+          <!-- File rows -->
+          <template x-for="item in importQueue" :key="item.id">
+            <div class="iq-row" :class="'iq-row--' + item.status" role="listitem">
+
+              <!-- File icon + name -->
+              <div class="iq-file">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="iq-file-icon" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <span class="iq-file-name" x-text="item.name" :title="item.name"></span>
+                <span class="iq-file-size" x-text="fmtFileSize(item.size)"></span>
+              </div>
+
+              <!-- Status / result -->
+              <div class="iq-status">
+                <!-- Pending -->
+                <template x-if="item.status === 'pending'">
+                  <span class="iq-badge iq-badge--pending">Pending</span>
+                </template>
+                <!-- Importing -->
+                <template x-if="item.status === 'importing'">
+                  <span class="iq-badge iq-badge--importing">
+                    <span class="spinner" style="width:11px;height:11px;" aria-hidden="true"></span>
+                    Importing…
+                  </span>
+                </template>
+                <!-- Done -->
+                <template x-if="item.status === 'done'">
+                  <div class="iq-result">
+                    <span class="iq-result-chip iq-result-chip--inserted" x-text="item.result.inserted + ' inserted'"></span>
+                    <span class="iq-result-chip iq-result-chip--skipped"  x-text="item.result.skipped  + ' skipped'"></span>
+                    <span class="iq-result-chip iq-result-chip--cat"      x-text="item.result.categorized + ' auto-cat'"></span>
+                    <template x-if="item.result.min_date">
+                      <span class="iq-result-dates">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                        <span x-text="fmtImportDate(item.result.min_date)"></span>
+                        <span>→</span>
+                        <span x-text="fmtImportDate(item.result.max_date)"></span>
+                      </span>
+                    </template>
+                  </div>
+                </template>
+                <!-- Error -->
+                <template x-if="item.status === 'error'">
+                  <span class="iq-badge iq-badge--error" :title="item.error">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span x-text="item.error"></span>
+                  </span>
+                </template>
+              </div>
+
+              <!-- Remove button (not while importing) -->
+              <button
+                x-show="item.status !== 'importing'"
+                class="iq-remove"
+                @click="removeFromQueue(item.id)"
+                :aria-label="'Remove ' + item.name"
+                title="Remove"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </template>
+
+          <!-- Summary totals row (shown when all done and >1 file) -->
+          <template x-if="importAllDone && importQueue.filter(f => f.status === 'done').length > 1">
+            <div class="iq-summary">
+              <span class="iq-summary-label">Total</span>
+              <div class="iq-result">
+                <span class="iq-result-chip iq-result-chip--inserted" x-text="importTotals.inserted + ' inserted'"></span>
+                <span class="iq-result-chip iq-result-chip--skipped"  x-text="importTotals.skipped  + ' skipped'"></span>
+                <span class="iq-result-chip iq-result-chip--cat"      x-text="importTotals.categorized + ' auto-cat'"></span>
+                <template x-if="importTotals.min_date">
+                  <span class="iq-result-dates">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    <span x-text="fmtImportDate(importTotals.min_date)"></span>
+                    <span>→</span>
+                    <span x-text="fmtImportDate(importTotals.max_date)"></span>
+                  </span>
+                </template>
+              </div>
+              <button class="btn btn-secondary btn-sm" @click="clearCompletedImports()" style="margin-left:auto;flex-shrink:0;">Clear all</button>
+            </div>
+          </template>
+
+        </div>
+      </template>
+    </div>
+  </div>
+
+  <!-- Filters Bar -->
+  <div class="card" style="margin-bottom: 1.5rem; overflow: visible;">
+    <div class="filters-bar" role="search" aria-label="Filter transactions">
+
+      <!-- Account filter -->
+      <div class="form-group">
+        <label class="form-label">Account</label>
+        <div style="position:relative;" @click.outside="accountDrop.open = false">
+          <div style="position:relative;" class="input-with-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="input-icon" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <input type="text" class="form-input" style="padding-right:36px;cursor:pointer;"
+              :value="accountDrop.search || (!accountDrop.open ? accountDrop.display : '')"
+              :placeholder="accountDrop.open ? accountDrop.display : ''"
+              @focus="accountDrop.open = true; accountDrop.search = ''"
+              @input="accountDrop.search = $event.target.value; accountDrop.open = true"
+              @keydown.escape="accountDrop.open = false"
+              autocomplete="off" aria-label="Filter by account" readonly>
+            <button type="button" class="btn-icon" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:24px;height:24px;" @click.stop="accountDrop.open = !accountDrop.open" tabindex="-1">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          </div>
+          <div x-show="accountDrop.open" style="position:absolute;z-index:100;top:calc(100% + 3px);left:0;right:0;max-height:220px;overflow-y:auto;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:var(--radius-md);box-shadow:0 8px 24px rgba(0,0,0,0.5);">
+            <ul style="list-style:none;margin:0;padding:0.25rem;">
+              <li @click="selectFilter('accountDrop','account_id','','All accounts')" style="padding:0.5rem 0.75rem;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--text-sm);color:var(--text-secondary);" :style="{ background: filters.account_id === '' ? 'var(--bg-overlay)' : 'transparent' }" @mouseenter="$el.style.background='var(--bg-overlay)'" @mouseleave="$el.style.background=filters.account_id===''?'var(--bg-overlay)':'transparent'">All accounts</li>
+              <template x-for="acc in accounts" :key="acc.id">
+                <li @click="selectFilter('accountDrop','account_id',acc.id,acc.account_name)" x-text="acc.account_name" style="padding:0.5rem 0.75rem;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--text-sm);color:var(--text-secondary);" :style="{ background: filters.account_id == acc.id ? 'var(--bg-overlay)' : 'transparent' }" @mouseenter="$el.style.background='var(--bg-overlay)'" @mouseleave="$el.style.background=filters.account_id==acc.id?'var(--bg-overlay)':'transparent'"></li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Category filter -->
+      <div class="form-group">
+        <label class="form-label">Category</label>
+        <div style="position:relative;" @click.outside="categoryDrop.open = false">
+          <div style="position:relative;" class="input-with-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="input-icon" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            <input type="text" class="form-input" style="padding-right:36px;"
+              :value="categoryDrop.search || (!categoryDrop.open ? categoryDrop.display : '')"
+              :placeholder="categoryDrop.open ? categoryDrop.display : 'Search categories…'"
+              @focus="categoryDrop.open = true; categoryDrop.search = ''"
+              @input="categoryDrop.search = $event.target.value; categoryDrop.open = true"
+              @keydown.escape="categoryDrop.open = false"
+              autocomplete="off" aria-label="Filter by category">
+            <button type="button" class="btn-icon" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:24px;height:24px;" @click.stop="categoryDrop.open = !categoryDrop.open" tabindex="-1">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          </div>
+          <div x-show="categoryDrop.open" style="position:absolute;z-index:100;top:calc(100% + 3px);left:0;right:0;max-height:260px;overflow-y:auto;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:var(--radius-md);box-shadow:0 8px 24px rgba(0,0,0,0.5);">
+            <ul style="list-style:none;margin:0;padding:0.25rem;">
+              <template x-for="opt in catFilterOptions(categoryDrop.search)" :key="opt.id">
+                <li
+                  x-text="opt.label"
+                  @click="selectFilter('categoryDrop', null, opt.id, opt.label, opt.id === '' ? { category_id: '', uncategorized: false } : opt.id === 'uncategorized' ? { category_id: '', uncategorized: true } : { category_id: opt.id, uncategorized: false })"
+                  style="padding:0.5rem 0.75rem;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--text-sm);color:var(--text-secondary);"
+                  :style="{ background: (opt.id === '' && !filters.uncategorized && filters.category_id === '') || (opt.id === 'uncategorized' && filters.uncategorized) || (opt.id != '' && opt.id !== 'uncategorized' && filters.category_id == opt.id) ? 'var(--bg-overlay)' : 'transparent' }"
+                  @mouseenter="$el.style.background='var(--bg-overlay)'"
+                  @mouseleave="$el.style.background=''">
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Period filter -->
+      <div class="form-group">
+        <label class="form-label">Period</label>
+        <div style="position:relative;" @click.outside="periodDrop.open = false">
+          <div style="position:relative;" class="input-with-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="input-icon" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            <input type="text" class="form-input" style="padding-right:36px;cursor:pointer;"
+              :value="periodDrop.search || (!periodDrop.open ? periodDrop.display : '')"
+              :placeholder="periodDrop.open ? periodDrop.display : ''"
+              @focus="periodDrop.open = true; periodDrop.search = ''"
+              @input="periodDrop.search = $event.target.value; periodDrop.open = true"
+              @keydown.escape="periodDrop.open = false"
+              autocomplete="off" aria-label="Filter by period" readonly>
+            <button type="button" class="btn-icon" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:24px;height:24px;" @click.stop="periodDrop.open = !periodDrop.open" tabindex="-1">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          </div>
+          <div x-show="periodDrop.open" style="position:absolute;z-index:100;top:calc(100% + 3px);left:0;right:0;max-height:220px;overflow-y:auto;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:var(--radius-md);box-shadow:0 8px 24px rgba(0,0,0,0.5);">
+            <ul style="list-style:none;margin:0;padding:0.25rem;">
+              <li @click="selectFilter('periodDrop','pay_period_id','','All periods')" style="padding:0.5rem 0.75rem;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--text-sm);color:var(--text-secondary);" :style="{ background: filters.pay_period_id === '' ? 'var(--bg-overlay)' : 'transparent' }" @mouseenter="$el.style.background='var(--bg-overlay)'" @mouseleave="$el.style.background=filters.pay_period_id===''?'var(--bg-overlay)':'transparent'">All periods</li>
+              <template x-for="p in periods" :key="p.id">
+                <li @click="selectFilter('periodDrop','pay_period_id',p.id,p.label)" x-text="p.label" style="padding:0.5rem 0.75rem;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--text-sm);color:var(--text-secondary);" :style="{ background: filters.pay_period_id == p.id ? 'var(--bg-overlay)' : 'transparent' }" @mouseenter="$el.style.background='var(--bg-overlay)'" @mouseleave="$el.style.background=filters.pay_period_id==p.id?'var(--bg-overlay)':'transparent'"></li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- Search -->
+      <div class="form-group form-group--search">
+        <label for="filter-search" class="form-label">Search</label>
+        <div class="input-with-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="input-icon" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input
+            id="filter-search"
+            type="search"
+            class="form-input form-input--with-icon"
+            :placeholder="filters.search_in === 'category' ? 'Search categories...' : filters.search_in === 'description' ? 'Search descriptions...' : 'Search descriptions &amp; categories...'"
+            x-model="filters.search"
+            @input="onSearchInput()"
+            :aria-label="'Search transactions by ' + filters.search_in"
+            autocomplete="off"
+          >
+        </div>
+        <!-- Search-in toggle -->
+        <div style="display:flex;gap:0;margin-top:0.375rem;background:var(--bg-elevated,rgba(255,255,255,0.04));border:1px solid var(--border-color,rgba(255,255,255,0.08));border-radius:6px;padding:2px;" role="group" aria-label="Search in">
+          <template x-for="opt in [{val:'both',label:'Both'},{val:'description',label:'Description'},{val:'category',label:'Category'}]" :key="opt.val">
+            <button
+              type="button"
+              x-text="opt.label"
+              @click="filters.search_in = opt.val; resetPage()"
+              :aria-pressed="filters.search_in === opt.val"
+              style="flex:1;border:none;cursor:pointer;font-size:0.7rem;padding:3px 6px;border-radius:4px;transition:background 0.15s,color 0.15s;white-space:nowrap;"
+              :style="{ background: filters.search_in === opt.val ? 'var(--accent-primary,#22c55e)' : 'transparent', color: filters.search_in === opt.val ? '#000' : 'var(--text-muted)' }"
+            ></button>
+          </template>
+        </div>
+      </div>
+
+      <!-- Clear Filters -->
+      <div class="form-group form-group--action">
+        <label class="form-label">&nbsp;</label>
+        <button
+          class="btn btn-secondary"
+          @click="
+            filters = { account_id: '', category_id: '', uncategorized: false, pay_period_id: '', search: '', search_in: 'both', page: 1, per_page: parseInt(localStorage.getItem('txn_per_page') || '50'), sort_by: 'date', sort_dir: 'desc' };
+            localStorage.removeItem('txn_category'); localStorage.removeItem('txn_period_id'); localStorage.removeItem('txn_page');
+            accountDrop.display = 'All accounts'; categoryDrop.display = 'All categories'; periodDrop.display = 'All periods';
+            loadTransactions();
+          "
+          aria-label="Clear all filters"
+        >
+          Clear
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Transaction Table -->
+  <div class="card">
+
+    <!-- Top pagination bar -->
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;padding:0.75rem var(--space-5);border-bottom:1px solid var(--border-subtle);">
+      <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+        <span style="font-size:0.8125rem;color:var(--text-muted);" aria-live="polite">
+          <template x-if="loading"><span>Loading…</span></template>
+          <template x-if="!loading && total > 0">
+            <span>
+              Showing
+              <strong x-text="Math.min((filters.page - 1) * filters.per_page + 1, total)"></strong>–<strong x-text="Math.min(filters.page * filters.per_page, total)"></strong>
+              of <strong x-text="total"></strong>
+            </span>
+          </template>
+          <template x-if="!loading && total === 0"><span>No transactions</span></template>
+        </span>
+        <div style="display:flex;align-items:center;gap:0.375rem;">
+          <label for="per-page-top" style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">Per page</label>
+          <select id="per-page-top" class="form-select" style="height:30px;padding:0 1.75rem 0 0.625rem;font-size:0.8125rem;width:auto;"
+            x-model.number="filters.per_page"
+            @change="filters.page = 1; localStorage.setItem('txn_per_page', filters.per_page); loadTransactions()"
+          >
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+          </select>
+        </div>
+      </div>
+      <template x-if="pages > 1">
+        <div style="display:flex;align-items:center;gap:2px;" role="navigation" aria-label="Page navigation">
+          <button class="page-btn" @click="goToPage(1)" :disabled="filters.page <= 1" aria-label="First page" title="First page">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+          </button>
+          <button class="page-btn" @click="goToPage(filters.page - 1)" :disabled="filters.page <= 1" aria-label="Previous page" title="Previous page">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <template x-for="(p, i) in pageRange()" :key="i">
+            <button
+              class="page-btn"
+              :class="{ 'active': p === filters.page }"
+              @click="typeof p === 'number' && goToPage(p)"
+              :disabled="p === '...'"
+              :style="p === '...' ? 'cursor:default;min-width:28px;' : 'min-width:32px;'"
+              x-text="p === '...' ? '…' : p"
+              :aria-label="typeof p === 'number' ? 'Page ' + p : undefined"
+              :aria-current="p === filters.page ? 'page' : undefined"
+            ></button>
+          </template>
+          <button class="page-btn" @click="goToPage(filters.page + 1)" :disabled="filters.page >= pages" aria-label="Next page" title="Next page">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          <button class="page-btn" @click="goToPage(pages)" :disabled="filters.page >= pages" aria-label="Last page" title="Last page">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+          </button>
+        </div>
+      </template>
+    </div>
+
+    <!-- Loading overlay -->
+    <div x-show="loading" class="table-loading" aria-busy="true" aria-label="Loading transactions">
+      <div class="spinner"></div>
+    </div>
+
+    <!-- Empty state -->
+    <div
+      x-show="!loading && transactions.length === 0"
+      class="empty-state"
+      role="status"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+      <p>No transactions found.</p>
+      <p class="empty-state__sub">Try adjusting your filters or import a CSV file.</p>
+    </div>
+
+    <!-- Table -->
+    <div x-show="!loading && transactions.length > 0" class="table-responsive">
+      <table class="table" aria-label="Transactions">
+        <colgroup>
+          <col style="width:110px">
+          <col><!-- Description: takes remaining space -->
+          <col style="width:110px">
+          <col style="width:160px">
+          <col style="width:80px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'date' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'date' && filters.sort_dir === 'desc' }" @click="sortBy('date')" aria-label="Sort by date">Date</th>
+            <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'description' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'description' && filters.sort_dir === 'desc' }" @click="sortBy('description')" aria-label="Sort by description">Description</th>
+            <th scope="col" class="sortable text-right" :class="{ 'sort-asc': filters.sort_by === 'amount' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'amount' && filters.sort_dir === 'desc' }" @click="sortBy('amount')" aria-label="Sort by amount">Amount</th>
+            <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'category' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'category' && filters.sort_dir === 'desc' }" @click="sortBy('category')" aria-label="Sort by category">Category</th>
+            <th scope="col" class="text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="tx in transactions" :key="tx.id">
+            <tr class="table-row">
+
+              <!-- Date -->
+              <td class="table-cell table-cell--date">
+                <span x-text="formatDate(tx.date)" class="date-text"></span>
+              </td>
+
+              <!-- Description -->
+              <td class="table-cell table-cell--description">
+                <div class="description-cell">
+                  <!-- Logo / placeholder — clickable when pk is configured -->
+                  <button
+                    class="merchant-logo-btn"
+                    :class="{'merchant-logo-btn--clickable': logoPk}"
+                    @click="logoPk && openLogoEdit(tx)"
+                    :title="logoPk ? 'Edit merchant logo' : ''"
+                    :aria-label="logoPk ? 'Edit logo for ' + tx.description : undefined"
+                    :tabindex="logoPk ? 0 : -1"
+                  >
+                    <template x-if="tx.merchant_domain">
+                      <img
+                        :src="`/static/logos/${tx.merchant_domain}.png`"
+                        :data-fallback="logoPk ? `https://img.logo.dev/${tx.merchant_domain}?token=${logoPk}&size=40&format=png` : ''"
+                        @error="$el.src !== $el.dataset.fallback && $el.dataset.fallback ? ($el.src = $el.dataset.fallback) : ($el.style.display = 'none')"
+                        :alt="tx.merchant_domain"
+                        class="merchant-logo"
+                      >
+                    </template>
+                    <template x-if="!tx.merchant_domain">
+                      <div class="merchant-logo-placeholder" aria-hidden="true">
+                        <span x-text="tx.description.trim().charAt(0).toUpperCase()"></span>
+                      </div>
+                    </template>
+
+                  </button>
+                  <button @click="filters.search = tx.description; filters.search_in = 'description'; resetPage()" class="description-text" style="background:none;border:none;padding:0;text-align:left;cursor:pointer;color:inherit;" :title="'Filter by: ' + tx.description" x-text="tx.description"></button>
+                </div>
+              </td>
+
+              <!-- Amount -->
+              <td class="table-cell table-cell--amount text-right">
+                <span
+                  x-text="formatAmount(tx.amount)"
+                  :class="amountClass(tx.amount)"
+                ></span>
+              </td>
+
+              <!-- Category (inline edit) -->
+              <td class="table-cell table-cell--category">
+                <template x-if="editingCategory !== tx.id">
+                  <span>
+                    <template x-if="!tx.category_name">
+                      <a
+                        :href="'/rules?keyword=' + encodeURIComponent(tx.description)"
+                        class="badge-button"
+                        title="Click to add a rule for this transaction"
+                        :aria-label="'Uncategorized. Click to create a rule.'"
+                      >
+                        <span class="badge badge--uncategorized">Uncategorized</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="badge-edit-icon" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                      </a>
+                    </template>
+                    <template x-if="tx.category_name">
+                      <span class="badge-button">
+                        <button
+                          :class="'badge badge--cat-colored ' + catColorClass(tx.category_id, categories)"
+                          @click="filterByCategory(tx.category_id, tx.parent_category_name ? tx.parent_category_name + ' › ' + tx.category_name : tx.category_name)"
+                          :title="'Filter by ' + (tx.parent_category_name ? tx.parent_category_name + ' › ' + tx.category_name : tx.category_name)"
+                          :aria-label="'Filter by category: ' + (tx.parent_category_name ? tx.parent_category_name + ' › ' + tx.category_name : tx.category_name)"
+                          x-text="tx.parent_category_name ? tx.parent_category_name + ' › ' + tx.category_name : tx.category_name"
+                          style="cursor:pointer;"
+                        ></button>
+                        <button
+                          @click="startEditCategory(tx.id)"
+                          title="Change category"
+                          aria-label="Change category"
+                          style="display:inline-flex;align-items:center;padding:0 2px;background:none;border:none;cursor:pointer;color:var(--text-muted);"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="badge-edit-icon" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                      </span>
+                    </template>
+                  </span>
+                </template>
+                <template x-if="editingCategory === tx.id">
+                  <div class="category-edit-inline" @click.outside="editingCategory = null">
+                    <select
+                      class="form-select form-select--inline"
+                      :value="tx.category_id || ''"
+                      @change="changeCategory(tx.id, $event.target.value)"
+                      @keydown.escape="editingCategory = null"
+                      x-init="$nextTick(() => $el.focus())"
+                      aria-label="Select category for this transaction"
+                    >
+                      <option value="">Uncategorized</option>
+                      {% for category in categories %}
+                      <option value="{{ category.id }}">{{ category.name }}</option>
+                      {% endfor %}
+                    </select>
+                    <button
+                      class="btn-icon btn-icon--cancel"
+                      @click="editingCategory = null"
+                      aria-label="Cancel category edit"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                  </div>
+                </template>
+              </td>
+
+              <!-- Actions -->
+              <td class="table-cell table-cell--actions text-right">
+                <button
+                  class="btn-icon btn-icon--danger"
+                  @click="deleteTransaction(tx.id)"
+                  :aria-label="'Delete transaction: ' + tx.description"
+                  title="Delete transaction"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+                </button>
+              </td>
+
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Bottom pagination bar -->
+    <div
+      x-show="!loading && pages > 1"
+      style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;padding:0.75rem var(--space-5);border-top:1px solid var(--border-subtle);"
+    >
+      <span style="font-size:0.8125rem;color:var(--text-muted);" aria-live="polite">
+        Page <strong x-text="filters.page"></strong> of <strong x-text="pages"></strong>
+        &nbsp;·&nbsp;
+        <strong x-text="total"></strong> total
+      </span>
+      <div style="display:flex;align-items:center;gap:2px;" role="navigation" aria-label="Page navigation">
+        <button class="page-btn" @click="goToPage(1)" :disabled="filters.page <= 1" aria-label="First page" title="First page">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+        </button>
+        <button class="page-btn" @click="goToPage(filters.page - 1)" :disabled="filters.page <= 1" aria-label="Previous page" title="Previous page">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <template x-for="(p, i) in pageRange()" :key="i">
+          <button
+            class="page-btn"
+            :class="{ 'active': p === filters.page }"
+            @click="typeof p === 'number' && goToPage(p)"
+            :disabled="p === '...'"
+            :style="p === '...' ? 'cursor:default;min-width:28px;' : 'min-width:32px;'"
+            x-text="p === '...' ? '…' : p"
+            :aria-label="typeof p === 'number' ? 'Page ' + p : undefined"
+            :aria-current="p === filters.page ? 'page' : undefined"
+          ></button>
+        </template>
+        <button class="page-btn" @click="goToPage(filters.page + 1)" :disabled="filters.page >= pages" aria-label="Next page" title="Next page">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <button class="page-btn" @click="goToPage(pages)" :disabled="filters.page >= pages" aria-label="Last page" title="Last page">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Logo edit modal ─────────────────────────────────────────── -->
+  <div
+    x-show="logoModal.open"
+    class="logo-modal-backdrop"
+    @click.self="closeLogoModal()"
+    @keydown.escape.window="closeLogoModal()"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="logo-modal-title"
+    style="display:none"
+  >
+    <div class="logo-modal-panel">
+
+      <!-- Header -->
+      <div class="logo-modal-header">
+        <div style="min-width:0">
+          <h2 class="logo-modal-title" id="logo-modal-title">Edit merchant logo</h2>
+          <p class="logo-modal-sub" x-text="logoModal.tx?.description"></p>
+        </div>
+        <button class="btn-icon btn-icon--cancel" @click="closeLogoModal()" aria-label="Close logo editor">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Search input -->
+      <div class="logo-modal-search">
+        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="logo-modal-search-icon" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input
+          type="search"
+          id="logo-search-input"
+          class="logo-modal-input"
+          x-model="logoModal.query"
+          @input="onLogoSearchInput()"
+          placeholder="Search brand name…"
+          autocomplete="off"
+          aria-label="Search for a brand logo"
+        >
+        <!-- inline spinner while searching -->
+        <div x-show="logoModal.searching" class="logo-modal-spinner" aria-hidden="true">
+          <span class="spinner" style="width:14px;height:14px"></span>
+        </div>
+      </div>
+
+      <!-- Body: results / states -->
+      <div class="logo-modal-body">
+
+        <!-- Error -->
+        <p x-show="logoModal.error" x-text="logoModal.error" class="logo-modal-error"></p>
+
+        <!-- Results grid -->
+        <div x-show="!logoModal.searching && logoModal.results.length > 0" class="logo-results-grid">
+          <template x-for="r in logoModal.results" :key="r.domain">
+            <button
+              class="logo-result-card"
+              @click="saveLogoOverride(r.domain)"
+              :disabled="logoModal.saving"
+              :aria-label="'Use ' + r.name + ' logo'"
+            >
+              <div class="logo-result-img-wrap">
+                <img
+                  :src="`https://img.logo.dev/${r.domain}?token=${logoPk}&size=64&format=png`"
+                  :alt="r.name"
+                  @error="$el.style.visibility='hidden'"
+                  class="logo-result-img"
+                >
+              </div>
+              <span class="logo-result-name" x-text="r.name"></span>
+              <span class="logo-result-domain" x-text="r.domain"></span>
+            </button>
+          </template>
+        </div>
+
+        <!-- Empty state -->
+        <div
+          x-show="!logoModal.searching && !logoModal.error && logoModal.results.length === 0 && logoModal.query.trim()"
+          class="logo-modal-empty"
+        >
+          No results — try a different search term.
+        </div>
+
+        <!-- Idle state (no query yet) -->
+        <div
+          x-show="!logoModal.searching && !logoModal.error && logoModal.results.length === 0 && !logoModal.query.trim()"
+          class="logo-modal-empty"
+        >
+          Type a brand name to search.
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="logo-modal-footer">
+        <button
+          class="btn btn--ghost"
+          @click="saveLogoOverride(null)"
+          :disabled="logoModal.saving || !logoModal.tx?.merchant_domain"
+          title="Remove custom logo and fall back to automatic lookup"
+        >
+          Clear logo
+        </button>
+        <button class="btn btn--secondary" @click="closeLogoModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

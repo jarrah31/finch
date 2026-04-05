@@ -1,0 +1,1415 @@
+{% extends "base.html" %}
+
+{% block title %}Rules{% endblock %}
+
+{% block content %}
+<div x-data="rulesPage()" x-init="init()">
+
+  <!-- ================================================================
+       PAGE HEADER
+       ================================================================ -->
+  <style>
+    .rule-amount { transition: filter 0.25s ease; }
+    [data-privacy] .rule-amount { filter: blur(8px); user-select: none; }
+  </style>
+
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Rules</h1>
+      <p class="page-subtitle">Manage transaction categorization rules</p>
+    </div>
+  </div>
+
+
+  <!-- ================================================================
+       INLINE ADD RULE
+       ================================================================ -->
+  <section class="card" aria-labelledby="add-rule-inline-heading"
+    :style="{ marginBottom: '1.5rem', overflow: 'visible', borderColor: addRule.editId ? 'rgba(245,158,11,0.5)' : '', transition: 'border-color 0.2s' }">
+    <div class="card-header">
+      <h2 class="card-title" id="add-rule-inline-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        <span x-text="addRule.editId ? 'Edit Rule' : 'Add Rule'">Add Rule</span>
+      </h2>
+      <button
+        x-show="addRule.editId"
+        type="button"
+        class="btn btn-secondary"
+        style="font-size:0.8125rem;padding:0.25rem 0.875rem;"
+        @click="cancelEdit()"
+      >Cancel</button>
+    </div>
+
+    <div class="card-body">
+      <!-- Two-column layout: left = Keyword/Amount/Subscription/Save, right = Category/Comment -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;align-items:start;" class="add-rule-grid">
+
+        <!-- ── LEFT COLUMN ──────────────────────────────────── -->
+        <div style="display:flex;flex-direction:column;gap:0.75rem;">
+
+          <!-- Keyword tag-input -->
+          <div class="form-group" style="margin:0;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.25rem;">
+              <div style="display:flex;align-items:center;gap:0.375rem;">
+                <label class="form-label" style="margin:0;">Keyword <span aria-hidden="true" style="color:var(--color-rose,#f43f5e);">*</span></label>
+                <span x-data="{ tip: false }" style="position:relative;display:inline-flex;align-items:center;">
+                  <button type="button" @mouseenter="tip=true" @mouseleave="tip=false" @focus="tip=true" @blur="tip=false"
+                    style="width:15px;height:15px;border-radius:50%;border:1px solid rgba(100,100,100,0.4);background:rgba(100,100,100,0.1);color:var(--text-muted);font-size:0.6rem;font-weight:700;cursor:default;line-height:1;display:flex;align-items:center;justify-content:center;padding:0;"
+                    aria-label="Help: exclude keywords and amounts">?</button>
+                  <div x-show="tip" x-transition style="position:absolute;left:50%;bottom:calc(100% + 6px);transform:translateX(-50%);z-index:9999;width:230px;background:var(--bg-elevated,#1e1e2e);border:1px solid var(--border-default,rgba(255,255,255,0.12));border-radius:6px;padding:0.625rem 0.75rem;box-shadow:0 6px 20px rgba(0,0,0,0.5);pointer-events:none;">
+                    <p style="margin:0 0 0.4rem;font-size:0.75rem;font-weight:600;color:var(--text-primary);">Excluding values</p>
+                    <p style="margin:0 0 0.35rem;font-size:0.7rem;color:var(--text-secondary);line-height:1.45;">Click <span style="font-family:monospace;font-size:0.75rem;color:#fb7185;">≠</span> on any keyword or amount chip to <em>exclude</em> it — the rule will match everything <em>except</em> transactions containing that value.</p>
+                    <p style="margin:0;font-size:0.7rem;color:var(--text-muted);line-height:1.45;">Click <span style="font-family:monospace;font-size:0.75rem;">= </span> on a red chip to convert it back to a normal match.</p>
+                  </div>
+                </span>
+              </div>
+              <button
+                type="button"
+                @click="addRule.hideCategorisd = !addRule.hideCategorisd; searchAddRuleDescriptions()"
+                :style="{ background: addRule.hideCategorisd ? 'rgba(99,102,241,0.2)' : 'rgba(100,100,100,0.08)', color: addRule.hideCategorisd ? '#a5b4fc' : 'var(--text-muted)', border: addRule.hideCategorisd ? '1px solid rgba(99,102,241,0.4)' : '1px solid rgba(100,100,100,0.3)' }"
+                style="padding:2px 8px;border-radius:4px;cursor:pointer;font-size:0.7rem;font-weight:500;white-space:nowrap;transition:all 0.15s;"
+              >Hide categorised</button>
+            </div>
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-height:40px;background:var(--bg-input,rgba(255,255,255,0.05));border:1px solid var(--border-default,rgba(255,255,255,0.12));border-radius:var(--radius-md,6px);padding:3px 8px;">
+              <template x-for="(kw, i) in addRule.form.keywords" :key="'inc-'+i">
+                <span style="display:inline-flex;align-items:center;gap:2px;background:rgba(99,102,241,0.18);color:#a5b4fc;border:1px solid rgba(99,102,241,0.4);border-radius:5px;padding:2px 4px 2px 8px;font-size:0.8125rem;font-weight:500;white-space:nowrap;">
+                  <template x-if="addRule.editingKeyword.type === 'include' && addRule.editingKeyword.index === i">
+                    <input type="text"
+                      x-model="addRule.editingKeyword.value"
+                      :size="Math.max(3, addRule.editingKeyword.value.length)"
+                      @keydown.enter.prevent="commitKeywordEdit()"
+                      @keydown.escape.prevent="addRule.editingKeyword = { index: null, type: null, value: '' }"
+                      @blur="commitKeywordEdit()"
+                      x-init="$nextTick(() => { $el.focus(); $el.select(); })"
+                      style="background:transparent;border:none;outline:none;color:#a5b4fc;font-size:0.8125rem;font-weight:500;padding:0;min-width:20px;"
+                    >
+                  </template>
+                  <template x-if="!(addRule.editingKeyword.type === 'include' && addRule.editingKeyword.index === i)">
+                    <span x-text="kw" @click="addRule.editingKeyword = { index: i, type: 'include', value: kw }" style="cursor:text;" title="Click to edit"></span>
+                  </template>
+                  <button type="button" @mousedown.prevent @click="addRule.editingKeyword = { index: null, type: null, value: '' }; addRule.form.exclude_keywords.push(kw); addRule.form.keywords.splice(i,1); searchAddRuleDescriptions()" title="Convert to exclude keyword" style="background:none;border:none;cursor:pointer;color:inherit;padding:0 2px;line-height:1;font-size:0.75rem;opacity:0.55;font-family:monospace;" aria-label="Convert to exclude">≠</button>
+                  <button type="button" @mousedown.prevent @click="addRule.editingKeyword = { index: null, type: null, value: '' }; addRule.form.keywords.splice(i,1); searchAddRuleDescriptions()" style="background:none;border:none;cursor:pointer;color:inherit;padding:0 2px;line-height:1;font-size:1rem;opacity:0.7;" aria-label="Remove keyword">&times;</button>
+                </span>
+              </template>
+              <template x-for="(kw, i) in addRule.form.exclude_keywords" :key="'exc-'+i">
+                <span style="display:inline-flex;align-items:center;gap:2px;background:rgba(244,63,94,0.12);color:#fb7185;border:1px solid rgba(244,63,94,0.35);border-radius:5px;padding:2px 4px 2px 6px;font-size:0.8125rem;font-weight:500;white-space:nowrap;">
+                  <span style="font-family:monospace;font-size:0.75rem;opacity:0.8;margin-right:1px;">≠</span>
+                  <template x-if="addRule.editingKeyword.type === 'exclude' && addRule.editingKeyword.index === i">
+                    <input type="text"
+                      x-model="addRule.editingKeyword.value"
+                      :size="Math.max(3, addRule.editingKeyword.value.length)"
+                      @keydown.enter.prevent="commitKeywordEdit()"
+                      @keydown.escape.prevent="addRule.editingKeyword = { index: null, type: null, value: '' }"
+                      @blur="commitKeywordEdit()"
+                      x-init="$nextTick(() => { $el.focus(); $el.select(); })"
+                      style="background:transparent;border:none;outline:none;color:#fb7185;font-size:0.8125rem;font-weight:500;padding:0;min-width:20px;text-decoration:line-through;opacity:0.85;"
+                    >
+                  </template>
+                  <template x-if="!(addRule.editingKeyword.type === 'exclude' && addRule.editingKeyword.index === i)">
+                    <span x-text="kw" @click="addRule.editingKeyword = { index: i, type: 'exclude', value: kw }" style="text-decoration:line-through;opacity:0.85;cursor:text;" title="Click to edit"></span>
+                  </template>
+                  <button type="button" @mousedown.prevent @click="addRule.editingKeyword = { index: null, type: null, value: '' }; addRule.form.keywords.push(kw); addRule.form.exclude_keywords.splice(i,1); searchAddRuleDescriptions()" title="Convert to include keyword" style="background:none;border:none;cursor:pointer;color:inherit;padding:0 2px;line-height:1;font-size:0.75rem;opacity:0.55;font-family:monospace;" aria-label="Convert to include">=</button>
+                  <button type="button" @mousedown.prevent @click="addRule.editingKeyword = { index: null, type: null, value: '' }; addRule.form.exclude_keywords.splice(i,1); searchAddRuleDescriptions()" style="background:none;border:none;cursor:pointer;color:inherit;padding:0 2px;line-height:1;font-size:1rem;opacity:0.7;" aria-label="Remove exclude keyword">&times;</button>
+                </span>
+              </template>
+              <input
+                type="text"
+                x-model="addRule.keywordInput"
+                @input="onAddRuleKeywordInput()"
+                @keydown.enter.prevent="
+                  const v = addRule.keywordInput.trim();
+                  if (v && !addRule.form.keywords.includes(v)) { addRule.form.keywords.push(v); }
+                  addRule.keywordInput = '';
+                  searchAddRuleDescriptions();"
+                @keydown.tab.prevent="
+                  const v = addRule.keywordInput.trim();
+                  if (v && !addRule.form.keywords.includes(v)) { addRule.form.keywords.push(v); }
+                  addRule.keywordInput = '';
+                  searchAddRuleDescriptions();"
+                @keydown.backspace="if (!addRule.keywordInput && addRule.form.keywords.length) { addRule.form.keywords.pop(); searchAddRuleDescriptions(); }"
+                x-ref="addRuleKeywordInput"
+                placeholder="e.g. NETFLIX — Enter to add"
+                autocomplete="off"
+                aria-required="true"
+                style="border:none;background:transparent;color:var(--text-primary);font-size:0.875rem;outline:none;flex:1;min-width:120px;"
+              >
+            </div>
+          </div>
+
+          <!-- Description results -->
+          <div
+            x-show="addRule.keywordInput.length >= 2 || addRule.form.keywords.length > 0 || addRule.form.exclude_keywords.length > 0"
+            x-transition:enter="transition ease-out duration-100"
+            x-transition:enter-start="opacity-0"
+            x-transition:enter-end="opacity-100"
+            aria-live="polite"
+          >
+            <!-- Count bar -->
+            <div x-show="!addRule.loading && addRule.results.length > 0" style="padding:0.3rem 0.75rem 0.3rem;margin-bottom:2px;display:flex;align-items:center;justify-content:space-between;gap:0.5rem;">
+              <span class="text-xs" style="color:var(--text-muted);white-space:nowrap;">
+                <strong style="color:var(--text-secondary);" x-text="addRule.totalTxCount"></strong>
+                <span x-text="addRule.hideCategorisd ? ' x uncategorised' : ' x matching transactions'"></span>
+                <span x-show="addRule.results.length === 100 && addRule.totalTxCount > addRule.results.reduce((s,d)=>s+d.tx_count,0)" style="color:var(--text-muted);font-size:0.65rem;"> (showing first 100)</span>
+              </span>
+              <button
+                type="button"
+                @click="addRule.expandAmounts = !addRule.expandAmounts"
+                :style="{ background: 'rgba(100,100,100,0.08)', color: 'var(--text-muted)', border: '1px solid rgba(100,100,100,0.3)' }"
+                style="padding:2px 8px;border-radius:4px;cursor:pointer;font-size:0.7rem;font-weight:500;white-space:nowrap;transition:all 0.15s;"
+                :title="addRule.expandAmounts ? 'Switch to summary view' : 'Switch to detailed view'"
+                x-text="addRule.expandAmounts ? 'Show Summary' : 'Show Details'"
+              ></button>
+            </div>
+            <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border-color, rgba(255,255,255,0.06));border-radius:6px;">
+              <template x-if="addRule.loading">
+                <div style="display:flex;align-items:center;justify-content:center;padding:1rem;gap:0.5rem;">
+                  <div class="spinner" style="width:14px;height:14px;" aria-label="Searching"></div>
+                  <span class="text-sm" style="color:var(--text-muted);">Searching...</span>
+                </div>
+              </template>
+              <template x-if="!addRule.loading && addRule.results.length === 0 && (addRule.keywordInput.length >= 2 || addRule.form.keywords.length > 0 || addRule.form.exclude_keywords.length > 0)">
+                <p class="no-data-message text-sm" style="padding:0.875rem 1rem;margin:0;">No matching descriptions found.</p>
+              </template>
+              <ul style="list-style:none;margin:0;padding:0;" role="list" aria-label="Matching transaction descriptions">
+                <template x-for="desc in addRule.results" :key="desc.description">
+                  <li style="border-bottom:1px solid var(--border-color, rgba(255,255,255,0.06));">
+                    <button
+                      style="width:100%;text-align:left;padding:0.5rem 0.875rem;background:none;border:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:0.5rem;transition:background 0.1s;"
+                      @click="if (!addRule.form.keywords.includes(desc.description)) addRule.form.keywords.push(desc.description); addRule.keywordInput = ''; clearTimeout(addRule.timeout); $nextTick(() => searchAddRuleDescriptions())"
+                      @mouseenter="$el.style.background='var(--bg-overlay, rgba(255,255,255,0.04))'"
+                      @mouseleave="$el.style.background='none'"
+                      :aria-label="'Use keyword: ' + desc.description"
+                      title="Click to use as keyword"
+                    >
+                      <span class="text-sm" x-text="desc.description" style="color:var(--text-primary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span>
+                      <span
+                        class="text-xs"
+                        x-show="desc.min_date"
+                        x-text="fmtDateRange(desc.min_date, desc.max_date)"
+                        style="color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0;margin-right:0.25rem;"
+                      ></span>
+                      <template x-if="rulesForDesc(desc).length > 0">
+                        <span style="display:inline-flex;align-items:center;gap:3px;font-size:0.7rem;color:#f59e0b;background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.3);border-radius:4px;padding:1px 6px;white-space:nowrap;flex-shrink:0;margin-right:0.25rem;">
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                          <span x-text="rulesForDesc(desc).map(r => { const c = categories.find(x => x.id === r.category_id); if (c && c.parent_id) { const p = categories.find(x => x.id === c.parent_id); return p ? p.name + ' › ' + c.name : c.name; } return c ? c.name : r.category_name; }).join(', ')"></span>
+                        </span>
+                      </template>
+                      <!-- Summary view: total count + most frequent amount -->
+                      <span x-show="!addRule.expandAmounts" style="display:flex;gap:0.5rem;align-items:center;flex-shrink:0;">
+                        <span class="text-xs" style="color:var(--text-muted);" x-text="desc.tx_count + ' ×'"></span>
+                        <span
+                          class="text-xs font-medium"
+                          x-show="desc.amounts && desc.amounts.length > 0"
+                          :class="desc.amounts && desc.amounts[0] && desc.amounts[0].amount < 0 ? 'amount-negative' : 'amount-positive'"
+                          x-text="desc.amounts && desc.amounts[0] ? formatAmount(desc.amounts[0].amount) : ''"
+                        ></span>
+                      </span>
+                      <!-- Detailed view: total count when multiple amounts exist -->
+                      <span class="text-xs" x-show="addRule.expandAmounts && desc.amounts && desc.amounts.length > 1" style="color:var(--text-muted);flex-shrink:0;" x-text="desc.tx_count + ' total'"></span>
+                    </button>
+                    <!-- Per-amount breakdown rows — click to toggle into match_amounts (detailed view only) -->
+                    <template x-if="addRule.expandAmounts && desc.amounts && desc.amounts.length > 0">
+                      <div style="padding:0 0.875rem 0.4rem 1.5rem;display:flex;flex-wrap:wrap;gap:0.35rem;">
+                        <template x-for="amt in desc.amounts" :key="amt.amount">
+                          <button
+                            type="button"
+                            @click.stop="
+                              const idx = addRule.form.match_amounts.findIndex(a => Math.abs(a - amt.amount) < 0.005);
+                              if (idx === -1) addRule.form.match_amounts.push(amt.amount);
+                              else addRule.form.match_amounts.splice(idx, 1);
+                              if (addRule.form.keywords.length > 0 || addRule.keywordInput.length >= 2) searchAddRuleDescriptions();
+                            "
+                            :style="addRule.form.match_amounts.some(a => Math.abs(a - amt.amount) < 0.005)
+                              ? 'display:inline-flex;align-items:center;gap:0.3rem;font-size:0.72rem;border-radius:4px;padding:2px 7px;white-space:nowrap;cursor:pointer;background:rgba(99,102,241,0.18);border:1px solid rgba(99,102,241,0.5);'
+                              : 'display:inline-flex;align-items:center;gap:0.3rem;font-size:0.72rem;border-radius:4px;padding:2px 7px;white-space:nowrap;cursor:pointer;background:var(--bg-overlay,rgba(255,255,255,0.04));border:1px solid var(--border-color,rgba(255,255,255,0.08));'"
+                            :title="addRule.form.match_amounts.some(a => Math.abs(a - amt.amount) < 0.005) ? 'Remove amount filter' : 'Filter by this amount'"
+                          >
+                            <span style="color:var(--text-muted);" x-text="amt.count + ' ×'"></span>
+                            <span :class="amt.amount < 0 ? 'amount-negative' : 'amount-positive'" x-text="formatAmount(amt.amount)"></span>
+                          </button>
+                        </template>
+                      </div>
+                    </template>
+                  </li>
+                </template>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Amount + Subscription side-by-side -->
+          <div class="form-group" style="margin:0;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.25rem;">
+              <label class="form-label" style="margin:0;">Amount <span class="text-xs" style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+              <button
+                type="button"
+                x-show="addRule.form.match_amounts.length > 0 || addRule.form.exclude_amounts.length > 0"
+                @click="addRule.filterByAmounts = !addRule.filterByAmounts; searchAddRuleDescriptions()"
+                :style="{ background: addRule.filterByAmounts ? 'rgba(99,102,241,0.2)' : 'rgba(100,100,100,0.08)', color: addRule.filterByAmounts ? '#a5b4fc' : 'var(--text-muted)', border: addRule.filterByAmounts ? '1px solid rgba(99,102,241,0.4)' : '1px solid rgba(100,100,100,0.3)' }"
+                style="padding:2px 8px;border-radius:4px;cursor:pointer;font-size:0.7rem;font-weight:500;white-space:nowrap;transition:all 0.15s;"
+              >Filter by Amount Values</button>
+            </div>
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-height:40px;background:var(--bg-input,rgba(255,255,255,0.05));border:1px solid var(--border-default,rgba(255,255,255,0.12));border-radius:var(--radius-md,6px);padding:3px 8px;">
+              <template x-for="(amt, i) in addRule.form.match_amounts" :key="'inc-'+i">
+                <span style="display:inline-flex;align-items:center;gap:2px;background:rgba(34,197,94,0.15);color:#4ade80;border:1px solid rgba(34,197,94,0.4);border-radius:5px;padding:2px 4px 2px 8px;font-size:0.875rem;font-weight:600;white-space:nowrap;">
+                  <span x-text="amt"></span>
+                  <button type="button" @click="addRule.form.exclude_amounts.push(amt); addRule.form.match_amounts.splice(i,1); if(addRule.form.keywords.length > 0 || addRule.keywordInput.length >= 2) searchAddRuleDescriptions()" title="Convert to exclude amount" style="background:none;border:none;cursor:pointer;color:inherit;padding:0 2px;line-height:1;font-size:0.75rem;opacity:0.55;font-family:monospace;" aria-label="Convert to exclude">≠</button>
+                  <button type="button" @click="addRule.form.match_amounts.splice(i,1); if(addRule.form.keywords.length > 0 || addRule.keywordInput.length >= 2) searchAddRuleDescriptions()" style="background:none;border:none;cursor:pointer;color:inherit;padding:0 2px;line-height:1;font-size:1rem;opacity:0.7;" aria-label="Remove amount">&times;</button>
+                </span>
+              </template>
+              <template x-for="(amt, i) in addRule.form.exclude_amounts" :key="'exc-'+i">
+                <span style="display:inline-flex;align-items:center;gap:2px;background:rgba(244,63,94,0.12);color:#fb7185;border:1px solid rgba(244,63,94,0.35);border-radius:5px;padding:2px 4px 2px 6px;font-size:0.875rem;font-weight:600;white-space:nowrap;">
+                  <span style="font-family:monospace;font-size:0.75rem;opacity:0.8;margin-right:1px;">≠</span>
+                  <span x-text="amt" style="text-decoration:line-through;opacity:0.85;"></span>
+                  <button type="button" @click="addRule.form.match_amounts.push(amt); addRule.form.exclude_amounts.splice(i,1); if(addRule.form.keywords.length > 0 || addRule.keywordInput.length >= 2) searchAddRuleDescriptions()" title="Convert to include amount" style="background:none;border:none;cursor:pointer;color:inherit;padding:0 2px;line-height:1;font-size:0.75rem;opacity:0.55;font-family:monospace;" aria-label="Convert to include">=</button>
+                  <button type="button" @click="addRule.form.exclude_amounts.splice(i,1); if(addRule.form.keywords.length > 0 || addRule.keywordInput.length >= 2) searchAddRuleDescriptions()" style="background:none;border:none;cursor:pointer;color:inherit;padding:0 2px;line-height:1;font-size:1rem;opacity:0.7;" aria-label="Remove exclude amount">&times;</button>
+                </span>
+              </template>
+              <input
+                type="number"
+                x-model="addRule.amountInput"
+                @keydown.enter.prevent="if(addRule.amountInput!==''){addRule.form.match_amounts.push(parseFloat(addRule.amountInput));addRule.amountInput='';if(addRule.form.keywords.length > 0 || addRule.keywordInput.length >= 2) searchAddRuleDescriptions();}"
+                @blur="if(addRule.amountInput!==''){addRule.form.match_amounts.push(parseFloat(addRule.amountInput));addRule.amountInput='';if(addRule.form.keywords.length > 0 || addRule.keywordInput.length >= 2) searchAddRuleDescriptions();}"
+                placeholder="e.g. -9.99"
+                step="0.01"
+                style="border:none;background:transparent;color:var(--text-primary);font-size:0.875rem;outline:none;flex:1;min-width:60px;"
+              >
+            </div>
+          </div>
+
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Subscription</label>
+            <div style="display:flex;gap:2px;background:rgba(255,255,255,0.06);border-radius:7px;padding:3px;height:40px;box-sizing:border-box;align-items:center;">
+              <template x-for="p in ['n/a','weekly','monthly','yearly']" :key="p">
+                <button type="button"
+                  style="height:100%;padding:0 10px;border:none;background:transparent;border-radius:5px;font-size:0.7rem;font-weight:500;cursor:pointer;transition:all 0.15s;white-space:nowrap;"
+                  :style="{ background: addRule.form.subscription_period === p ? 'var(--color-indigo,#6366f1)' : 'transparent', color: addRule.form.subscription_period === p ? '#fff' : 'var(--text-muted)', boxShadow: addRule.form.subscription_period === p ? '0 1px 3px rgba(0,0,0,0.3)' : 'none' }"
+                  @click="addRule.form.subscription_period = p"
+                  x-text="p === 'n/a' ? 'N/A' : p.charAt(0).toUpperCase() + p.slice(1)"></button>
+              </template>
+            </div>
+          </div>
+
+          <!-- Save button -->
+          <div>
+            <button
+              class="btn btn-primary"
+              @click="saveInlineRule()"
+              :disabled="addRule.saving || (!addRule.form.keywords.length && !addRule.keywordInput.trim()) || !addRule.form.category_id"
+            >
+              <template x-if="addRule.saving">
+                <div class="spinner" style="width:14px;height:14px;margin-right:6px;" aria-label="Saving"></div>
+              </template>
+              <span x-text="addRule.editId ? 'Save Changes' : 'Save Rule'">Save Rule</span>
+            </button>
+          </div>
+
+        </div><!-- /left column -->
+
+        <!-- ── RIGHT COLUMN ─────────────────────────────────── -->
+        <div style="display:flex;flex-direction:column;gap:0.75rem;">
+
+          <!-- Category combobox -->
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Category <span aria-hidden="true" style="color:var(--color-rose,#f43f5e);">*</span></label>
+            <div style="position:relative;" @click.outside="addRule.catDropdownOpen = false">
+              <div style="position:relative;" class="input-with-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="input-icon" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input
+                  type="text"
+                  class="form-input"
+                  style="padding-right:56px;"
+                  placeholder="Type to search categories…"
+                  x-model="addRule.catSearch"
+                  @focus="addRule.catDropdownOpen = true"
+                  @input="addRule.form.category_id = null; addRule.catDropdownOpen = true; addRule.catHighlightedId = addRule.catSearch.trim() ? '__create__' : null"
+                  @keydown.escape="addRule.catDropdownOpen = false"
+                  @keydown.enter.prevent="acceptAddRuleCat()"
+                  @keydown.arrow-down.prevent="navAddRuleCat(1)"
+                  @keydown.arrow-up.prevent="navAddRuleCat(-1)"
+                  autocomplete="off"
+                  aria-label="Category"
+                  aria-required="true"
+                >
+                <div style="position:absolute;right:4px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:0;">
+                  <button type="button" class="btn-icon" style="width:24px;height:24px;" x-show="addRule.catSearch" @click.stop="clearCat('addRule')" aria-label="Clear category" tabindex="-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                  <button type="button" class="btn-icon" style="width:24px;height:24px;" @click.stop="addRule.catDropdownOpen = !addRule.catDropdownOpen" aria-label="Show categories" tabindex="-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div
+                x-show="addRule.catDropdownOpen"
+                x-init="$nextTick(() => {
+                  const saved = localStorage.getItem('rules_cat_dropdown_h');
+                  if (saved) $el.style.height = saved + 'px';
+                  new ResizeObserver(() => {
+                    if ($el.offsetHeight > 0) localStorage.setItem('rules_cat_dropdown_h', $el.offsetHeight);
+                  }).observe($el);
+                })"
+                style="position:absolute;z-index:100;top:calc(100% + 3px);left:0;right:0;height:220px;min-height:80px;overflow-y:auto;resize:vertical;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:var(--radius-md);box-shadow:0 8px 24px rgba(0,0,0,0.5);"
+              >
+                <template x-if="filteredCatOptions(addRule.catSearch).filter(o => !o.isNew && !o.isHeader).length === 0">
+                  <p style="padding:0.75rem 1rem;color:var(--text-muted);font-size:var(--text-sm);margin:0;">No categories found.</p>
+                </template>
+                <ul style="list-style:none;margin:0;padding:0.25rem;">
+                  <li>
+                    <button
+                      type="button"
+                      style="width:100%;text-align:left;padding:0.5rem 0.625rem;border:none;background:transparent;cursor:pointer;border-radius:4px;font-size:var(--text-sm);display:flex;align-items:center;gap:0.5rem;transition:background 0.1s;color:var(--color-indigo,#6366f1);font-weight:500;"
+                      @click.stop="openNewCatModal('addRule'); addRule.catDropdownOpen = false"
+                      @mouseenter="$el.style.background='rgba(99,102,241,0.08)'"
+                      @mouseleave="$el.style.background='transparent'"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      Add new category
+                    </button>
+                  </li>
+                  <li style="border-top:1px solid var(--border-subtle,rgba(255,255,255,0.06));margin:2px 0.625rem;"></li>
+                  <template x-for="opt in filteredCatOptions(addRule.catSearch).filter(o => !o.isNew)" :key="opt.id">
+                    <li>
+                      <template x-if="opt.isCreate">
+                        <button
+                          type="button"
+                          style="width:100%;text-align:left;padding:0.5rem 0.625rem;border:none;outline:none;cursor:pointer;border-radius:4px;font-size:var(--text-sm);display:flex;align-items:center;gap:0.5rem;transition:background 0.1s;color:var(--color-indigo,#6366f1);font-weight:500;"
+                          :style="{ background: addRule.catHighlightedId === '__create__' ? 'rgba(99,102,241,0.15)' : 'transparent' }"
+                          @click.stop="quickCreateCat(opt.displayName, 'addRule'); addRule.catDropdownOpen = false"
+                          @mouseenter="addRule.catHighlightedId = '__create__'"
+                          @mouseleave="addRule.catHighlightedId = null"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                          New: "<span x-text="opt.displayName" style="color:var(--text-primary);"></span>"
+                        </button>
+                      </template>
+                      <template x-if="opt.isHeader && !opt.isCreate">
+                        <div style="padding:0.35rem 0.625rem 0.2rem;font-size:0.7rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;user-select:none;" x-text="opt.displayName"></div>
+                      </template>
+                      <template x-if="!opt.isHeader && !opt.isCreate">
+                        <button
+                          type="button"
+                          style="width:100%;text-align:left;padding:0.5rem 0.625rem;border:none;outline:none;cursor:pointer;border-radius:4px;font-size:var(--text-sm);display:flex;align-items:center;gap:0.5rem;transition:background 0.1s;"
+                          :style="{ background: addRule.form.category_id === opt.id ? 'rgba(100,100,100,0.15)' : (addRule.catHighlightedId === opt.id ? 'rgba(100,100,100,0.08)' : 'transparent') }"
+                          @click.stop="selectCat(opt, 'addRule')"
+                          @mouseenter="addRule.catHighlightedId = opt.id"
+                          @mouseleave="addRule.catHighlightedId = null"
+                        >
+                          <span x-text="opt.displayName" style="flex:1;color:var(--text-primary);"></span>
+                          <template x-if="rules.filter(r => r.category_id === opt.id).length > 0">
+                            <span style="display:flex;gap:2px;flex-wrap:wrap;margin-right:2px;">
+                              <template x-for="p in [...new Set(rules.filter(r => r.category_id === opt.id).map(r => r.priority))].sort((a,b)=>a-b)" :key="p">
+                                <span x-text="'P' + p" style="font-size:0.65rem;background:rgba(99,102,241,0.12);color:rgba(99,102,241,0.8);border:1px solid rgba(99,102,241,0.25);border-radius:3px;padding:0 3px;line-height:1.6;font-weight:600;flex-shrink:0;"></span>
+                              </template>
+                            </span>
+                          </template>
+                          <svg x-show="addRule.form.category_id === opt.id" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                        </button>
+                      </template>
+                    </li>
+                  </template>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tags tag-input -->
+          <div class="form-group" style="margin:0;">
+            <label class="form-label">Tags <span class="text-xs" style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+            <div style="position:relative;" @click.outside="addRule.tagDropdownOpen = false">
+              <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-height:40px;background:var(--bg-input,rgba(255,255,255,0.05));border:1px solid var(--border-default,rgba(255,255,255,0.12));border-radius:var(--radius-md,6px);padding:3px 8px;">
+                <template x-for="(tag, i) in addRule.form.tags" :key="i">
+                  <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.4);border-radius:5px;padding:2px 6px 2px 9px;font-size:0.8125rem;font-weight:500;white-space:nowrap;">
+                    <span x-text="tag"></span>
+                    <button type="button" @click="addRule.form.tags.splice(i,1)" style="background:none;border:none;cursor:pointer;color:inherit;padding:0 2px;line-height:1;font-size:1rem;opacity:0.7;" aria-label="Remove tag">&times;</button>
+                  </span>
+                </template>
+                <input
+                  type="text"
+                  x-model="addRule.tagInput"
+                  @input="addRule.tagDropdownOpen = true; addRule.tagHighlightIndex = 0;"
+                  @keydown.enter.prevent="commitTag('addRule')"
+                  @keydown.tab.prevent="commitTag('addRule')"
+                  @keydown.down.prevent="addRule.tagHighlightIndex = Math.min(addRule.tagHighlightIndex + 1, filteredTagSuggestions(addRule.tagInput, addRule.form.tags).length - 1)"
+                  @keydown.up.prevent="addRule.tagHighlightIndex = Math.max(addRule.tagHighlightIndex - 1, -1)"
+                  @keydown.escape="addRule.tagDropdownOpen = false; addRule.tagHighlightIndex = -1"
+                  @keydown.backspace="if(!addRule.tagInput&&addRule.form.tags.length)addRule.form.tags.pop();"
+                  placeholder="e.g. insurance — Enter to add"
+                  autocomplete="off"
+                  style="border:none;background:transparent;color:var(--text-primary);font-size:0.875rem;outline:none;flex:1;min-width:120px;"
+                >
+              </div>
+              <!-- Tag suggestions dropdown -->
+              <div
+                x-show="addRule.tagDropdownOpen && filteredTagSuggestions(addRule.tagInput, addRule.form.tags).length > 0"
+                style="position:absolute;z-index:50;top:calc(100% + 2px);left:0;right:0;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:var(--radius-md);box-shadow:0 4px 16px rgba(0,0,0,0.4);overflow:hidden;"
+              >
+                <ul style="list-style:none;margin:0;padding:0.25rem;">
+                  <template x-for="(sug, si) in filteredTagSuggestions(addRule.tagInput, addRule.form.tags)" :key="sug">
+                    <li>
+                      <button
+                        type="button"
+                        style="width:100%;text-align:left;padding:0.375rem 0.625rem;border:none;cursor:pointer;border-radius:4px;font-size:0.8125rem;font-weight:500;transition:background 0.1s;"
+                        :style="{ background: si === addRule.tagHighlightIndex ? 'rgba(245,158,11,0.15)' : 'transparent', color: si === addRule.tagHighlightIndex ? '#f59e0b' : 'var(--text-secondary)' }"
+                        @mouseenter="addRule.tagHighlightIndex = si"
+                        @mouseleave="addRule.tagHighlightIndex = -1"
+                        @click.stop="if(!addRule.form.tags.includes(sug))addRule.form.tags.push(sug); addRule.tagInput=''; addRule.tagDropdownOpen=false; addRule.tagHighlightIndex=-1;"
+                        x-text="sug"
+                      ></button>
+                    </li>
+                  </template>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Comment -->
+          <div class="form-group" style="margin:0;">
+            <label for="inline-rule-comment" class="form-label">Comment <span class="text-xs" style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+            <input
+              id="inline-rule-comment"
+              type="text"
+              class="form-input"
+              placeholder="e.g. Monthly subscription"
+              x-model="addRule.form.comment"
+              style="width:100%;"
+            >
+          </div>
+
+          <!-- Priority -->
+          <div class="form-group" style="margin:0;">
+            <label for="inline-rule-priority" class="form-label" style="display:flex;align-items:center;gap:0.35rem;">
+              Priority
+              <span title="Lower numbers run first. Rules at priority 0 are checked before priority 1, and so on. Within the same priority, rules run in creation order (lower ID first). Use 0 for specific rules (e.g. exact amounts), and a higher number for catch-all rules so the specific ones match first." style="cursor:help;color:var(--text-muted);display:inline-flex;align-items:center;" aria-label="Priority help">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              </span>
+              <span class="text-xs" style="color:var(--text-muted);font-weight:400;">(optional)</span>
+            </label>
+            <input
+              id="inline-rule-priority"
+              type="number"
+              class="form-input"
+              style="width:90px;"
+              min="0"
+              step="1"
+              placeholder="0"
+              x-model.number="addRule.form.priority"
+            >
+          </div>
+
+        </div><!-- /right column -->
+
+      </div><!-- /add-rule-grid -->
+
+      <!-- Error -->
+      <div
+        x-show="addRule.error"
+        x-text="addRule.error"
+        class="text-sm"
+        style="color:var(--color-rose,#f43f5e);padding:0.5rem 0.75rem;background:rgba(244,63,94,0.1);border-radius:6px;margin-top:0.75rem;"
+        role="alert"
+        aria-live="polite"
+      ></div>
+    </div>
+  </section>
+
+
+  <!-- ================================================================
+       RULES SECTION
+       ================================================================ -->
+  <section class="card" aria-labelledby="rules-heading" style="margin-bottom:1.5rem;">
+    <div class="card-header">
+      <h2 class="card-title" id="rules-heading">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        Categorization Rules
+      </h2>
+    </div>
+
+    <p class="text-xs" style="color:var(--text-muted);padding:0 1.25rem 0.75rem;">
+      Rules match transactions by keyword (case-insensitive substring) and optional amount. Lower priority numbers run first (0 = default).
+    </p>
+
+    <!-- Empty state -->
+    <template x-if="rules.length === 0">
+      <div class="empty-state" style="padding:2rem;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+        <p>No rules yet. Use the Add Rule form above to get started.</p>
+      </div>
+    </template>
+
+    <!-- Rules table -->
+    <template x-if="rules.length > 0">
+      <div>
+        <!-- Pagination bar -->
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;padding:0.75rem var(--space-5);border-bottom:1px solid var(--border-subtle);">
+          <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+            <span style="font-size:0.8125rem;color:var(--text-muted);">
+              Showing
+              <strong x-text="Math.min((rulesTable.page - 1) * rulesTable.per_page + 1, rules.length)"></strong>–<strong x-text="Math.min(rulesTable.page * rulesTable.per_page, rules.length)"></strong>
+              of <strong x-text="rules.length"></strong>
+            </span>
+            <div style="display:flex;align-items:center;gap:0.375rem;">
+              <label style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">Per page</label>
+              <select class="form-select" style="height:30px;padding:0 1.75rem 0 0.625rem;font-size:0.8125rem;width:auto;"
+                x-model.number="rulesTable.per_page"
+                @change="rulesTable.page = 1; localStorage.setItem('rules_per_page', rulesTable.per_page)"
+              >
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+          </div>
+          <template x-if="rulesTotalPages() > 1">
+            <div style="display:flex;align-items:center;gap:2px;" role="navigation" aria-label="Rules page navigation">
+              <button class="page-btn" @click="rulesGoToPage(1)" :disabled="rulesTable.page <= 1" aria-label="First page" title="First page">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+              </button>
+              <button class="page-btn" @click="rulesGoToPage(rulesTable.page - 1)" :disabled="rulesTable.page <= 1" aria-label="Previous page" title="Previous page">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              <template x-for="(p, i) in rulesPageRange()" :key="i">
+                <button class="page-btn" :class="{ 'active': p === rulesTable.page }" @click="typeof p === 'number' && rulesGoToPage(p)" :disabled="p === '...'" :style="p === '...' ? 'cursor:default;min-width:28px;' : 'min-width:32px;'" x-text="p === '...' ? '…' : p" :aria-label="typeof p === 'number' ? 'Page ' + p : undefined" :aria-current="p === rulesTable.page ? 'page' : undefined"></button>
+              </template>
+              <button class="page-btn" @click="rulesGoToPage(rulesTable.page + 1)" :disabled="rulesTable.page >= rulesTotalPages()" aria-label="Next page" title="Next page">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+              <button class="page-btn" @click="rulesGoToPage(rulesTotalPages())" :disabled="rulesTable.page >= rulesTotalPages()" aria-label="Last page" title="Last page">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+              </button>
+            </div>
+          </template>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table" aria-label="Categorization rules">
+            <thead>
+              <tr>
+                <th scope="col" class="sortable" style="min-width:175px;" :class="{ 'sort-asc': rulesTable.sort_by === 'keyword' && rulesTable.sort_dir === 'asc', 'sort-desc': rulesTable.sort_by === 'keyword' && rulesTable.sort_dir === 'desc' }" @click="sortRulesBy('keyword')" aria-label="Sort by keyword">KEYWORD</th>
+                <th scope="col" class="sortable" :class="{ 'sort-asc': rulesTable.sort_by === 'matches' && rulesTable.sort_dir === 'asc', 'sort-desc': rulesTable.sort_by === 'matches' && rulesTable.sort_dir === 'desc' }" @click="sortRulesBy('matches')" aria-label="Sort by matches">MATCHES</th>
+                <th scope="col" class="sortable" style="width:175px;" :class="{ 'sort-asc': rulesTable.sort_by === 'amount' && rulesTable.sort_dir === 'asc', 'sort-desc': rulesTable.sort_by === 'amount' && rulesTable.sort_dir === 'desc' }" @click="sortRulesBy('amount')" aria-label="Sort by amount match">AMOUNT MATCH</th>
+                <th scope="col" class="sortable" :class="{ 'sort-asc': rulesTable.sort_by === 'category' && rulesTable.sort_dir === 'asc', 'sort-desc': rulesTable.sort_by === 'category' && rulesTable.sort_dir === 'desc' }" @click="sortRulesBy('category')" aria-label="Sort by category">CATEGORY</th>
+                <th scope="col" class="sortable" :class="{ 'sort-asc': rulesTable.sort_by === 'subscription' && rulesTable.sort_dir === 'asc', 'sort-desc': rulesTable.sort_by === 'subscription' && rulesTable.sort_dir === 'desc' }" @click="sortRulesBy('subscription')" aria-label="Sort by subscription">SUBSCRIPTION</th>
+                <th scope="col" class="sortable" :class="{ 'sort-asc': rulesTable.sort_by === 'dates' && rulesTable.sort_dir === 'asc', 'sort-desc': rulesTable.sort_by === 'dates' && rulesTable.sort_dir === 'desc' }" @click="sortRulesBy('dates')" aria-label="Sort by date range">DATE RANGE</th>
+                <th scope="col" style="color:var(--text-muted);font-size:0.6875rem;font-weight:600;letter-spacing:0.04em;padding:0.625rem 1rem;">COMMENT</th>
+                <th scope="col" style="color:var(--text-muted);font-size:0.6875rem;font-weight:600;letter-spacing:0.04em;padding:0.625rem 1rem;">TAGS</th>
+                <th scope="col" class="text-right">ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="rule in pagedRules()" :key="rule.id">
+                <tr class="table-row">
+                  <td class="table-cell">
+                    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:0.25rem;">
+                      <code
+                        style="font-size:0.8125rem;background:var(--bg-overlay, rgba(255,255,255,0.06));padding:2px 6px;border-radius:4px;color:var(--text-primary);"
+                        x-text="(rule.keywords && rule.keywords.length > 1) ? rule.keywords.join(', ') : rule.keyword"
+                      ></code>
+                      <template x-for="(ekw, i) in (rule.exclude_keywords || [])" :key="i">
+                        <code
+                          style="font-size:0.8125rem;background:rgba(244,63,94,0.1);padding:2px 6px;border-radius:4px;color:#fb7185;text-decoration:line-through;opacity:0.85;"
+                          :title="'Exclude keyword: ' + ekw"
+                          x-text="'≠\u2009' + ekw"
+                        ></code>
+                      </template>
+                      <span
+                        x-show="rule.case_sensitive"
+                        class="badge"
+                        style="font-size:0.625rem;background:rgba(99,102,241,0.15);color:#818cf8;padding:1px 5px;"
+                        title="Case-sensitive"
+                      >Aa</span>
+                    </div>
+                  </td>
+                  <td class="table-cell">
+                    <span
+                      class="text-sm"
+                      :style="rule.tx_count > 0 ? 'color:var(--text-secondary);' : 'color:var(--text-muted);'"
+                      x-text="rule.tx_count != null ? rule.tx_count : '—'"
+                    ></span>
+                  </td>
+                  <td class="table-cell">
+                    <template x-if="(rule.match_amounts && rule.match_amounts.length > 0) || (rule.exclude_amounts && rule.exclude_amounts.length > 0)">
+                      <div style="display:flex;flex-wrap:wrap;gap:3px;">
+                        <template x-for="(amt, i) in rule.match_amounts" :key="'inc-'+i">
+                          <span
+                            class="text-xs font-medium rule-amount"
+                            :class="amt < 0 ? 'amount-negative' : 'amount-positive'"
+                            x-text="formatAmount(amt)"
+                          ></span>
+                        </template>
+                        <template x-for="(amt, i) in (rule.exclude_amounts || [])" :key="'exc-'+i">
+                          <span
+                            class="text-xs font-medium rule-amount"
+                            style="color:#fb7185;text-decoration:line-through;opacity:0.8;"
+                            :title="'Exclude: ' + formatAmount(amt)"
+                            x-text="'≠\u2009' + formatAmount(amt)"
+                          ></span>
+                        </template>
+                      </div>
+                    </template>
+                    <template x-if="(!rule.match_amounts || rule.match_amounts.length === 0) && (!rule.exclude_amounts || rule.exclude_amounts.length === 0)">
+                      <span class="text-xs" style="color:var(--text-muted);">any</span>
+                    </template>
+                  </td>
+                  <td class="table-cell">
+                    <span :class="'badge badge--cat-colored ' + catColorClass(rule.category_id, categories)" x-text="catDisplayName(categories.find(c => c.id === rule.category_id) || {name: rule.category_name})"></span>
+                  </td>
+                  <td class="table-cell">
+                    <template x-if="rule.is_subscription">
+                      <span
+                        class="badge"
+                        style="background:rgba(99,102,241,0.14);color:#a78bfa;border:1px solid rgba(99,102,241,0.25);text-transform:capitalize;font-size:0.7rem;"
+                        x-text="rule.subscription_period || 'monthly'"
+                      ></span>
+                    </template>
+                    <template x-if="!rule.is_subscription">
+                      <span class="text-xs" style="color:var(--text-muted);">—</span>
+                    </template>
+                  </td>
+                  <td class="table-cell">
+                    <span
+                      class="text-xs"
+                      style="font-variant-numeric:tabular-nums;white-space:nowrap;"
+                      :style="{ color: rule.tx_min_date ? 'var(--text-secondary)' : 'var(--text-muted)' }"
+                      x-text="fmtDateRange(rule.tx_min_date, rule.tx_max_date) || '—'"
+                    ></span>
+                  </td>
+                  <td class="table-cell">
+                    <span
+                      class="text-sm"
+                      :style="{ color: rule.comment ? 'var(--text-secondary)' : 'var(--text-muted)' }"
+                      x-text="rule.comment || '—'"
+                      :title="rule.comment || ''"
+                      style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;"
+                    ></span>
+                  </td>
+                  <td class="table-cell" style="max-width:160px;">
+                    <template x-if="rule.tags && rule.tags.length > 0">
+                      <div style="display:flex;flex-wrap:wrap;gap:3px;max-width:160px;">
+                        <template x-for="(tag, ti) in rule.tags" :key="ti">
+                          <span style="display:inline-flex;align-items:center;background:rgba(245,158,11,0.12);color:#f59e0b;border:1px solid rgba(245,158,11,0.3);border-radius:4px;padding:1px 6px;font-size:0.7rem;font-weight:500;white-space:nowrap;" x-text="tag"></span>
+                        </template>
+                      </div>
+                    </template>
+                    <template x-if="!rule.tags || rule.tags.length === 0">
+                      <span class="text-xs" style="color:var(--text-muted);">—</span>
+                    </template>
+                  </td>
+                  <td class="table-cell text-right">
+                    <div style="display:flex;gap:0.25rem;justify-content:flex-end;">
+                      <button
+                        class="btn-icon"
+                        @click="openEditRule(rule)"
+                        :aria-label="'Edit rule for ' + rule.keyword"
+                        title="Edit"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                      </button>
+                      <button
+                        class="btn-icon btn-icon--danger"
+                        @click="deleteRule(rule)"
+                        :aria-label="'Delete rule for ' + rule.keyword"
+                        title="Delete"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Bottom pagination bar -->
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.75rem;padding:0.75rem var(--space-5);border-top:1px solid var(--border-subtle);">
+          <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
+            <span style="font-size:0.8125rem;color:var(--text-muted);">
+              Showing
+              <strong x-text="Math.min((rulesTable.page - 1) * rulesTable.per_page + 1, rules.length)"></strong>–<strong x-text="Math.min(rulesTable.page * rulesTable.per_page, rules.length)"></strong>
+              of <strong x-text="rules.length"></strong>
+            </span>
+            <div style="display:flex;align-items:center;gap:0.375rem;">
+              <label style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;">Per page</label>
+              <select class="form-select" style="height:30px;padding:0 1.75rem 0 0.625rem;font-size:0.8125rem;width:auto;"
+                x-model.number="rulesTable.per_page"
+                @change="rulesTable.page = 1; localStorage.setItem('rules_per_page', rulesTable.per_page)"
+              >
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
+          </div>
+          <template x-if="rulesTotalPages() > 1">
+            <div style="display:flex;align-items:center;gap:2px;" role="navigation" aria-label="Rules page navigation">
+              <button class="page-btn" @click="rulesGoToPage(1)" :disabled="rulesTable.page <= 1" aria-label="First page" title="First page">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="11 17 6 12 11 7"/><polyline points="18 17 13 12 18 7"/></svg>
+              </button>
+              <button class="page-btn" @click="rulesGoToPage(rulesTable.page - 1)" :disabled="rulesTable.page <= 1" aria-label="Previous page" title="Previous page">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+              </button>
+              <template x-for="(p, i) in rulesPageRange()" :key="i">
+                <button class="page-btn" :class="{ 'active': p === rulesTable.page }" @click="typeof p === 'number' && rulesGoToPage(p)" :disabled="p === '...'" :style="p === '...' ? 'cursor:default;min-width:28px;' : 'min-width:32px;'" x-text="p === '...' ? '…' : p" :aria-label="typeof p === 'number' ? 'Page ' + p : undefined" :aria-current="p === rulesTable.page ? 'page' : undefined"></button>
+              </template>
+              <button class="page-btn" @click="rulesGoToPage(rulesTable.page + 1)" :disabled="rulesTable.page >= rulesTotalPages()" aria-label="Next page" title="Next page">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+              </button>
+              <button class="page-btn" @click="rulesGoToPage(rulesTotalPages())" :disabled="rulesTable.page >= rulesTotalPages()" aria-label="Last page" title="Last page">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+              </button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </template>
+  </section>
+
+
+
+  <!-- ================================================================
+       RULE MODAL (removed — edit is now inline in the Add Rule card)
+       ================================================================ -->
+
+
+
+  {% include 'partials/cat_modal.html' %}
+
+</div>
+<!-- /x-data -->
+{% endblock %}
+
+
+{% block scripts %}
+<style>
+  .cat-row-expandable { cursor: pointer; }
+
+  @media (max-width: 768px) {
+    .add-rule-grid {
+      grid-template-columns: 1fr !important;
+    }
+  }
+</style>
+<script>
+  function rulesPage() {
+    return {
+      ...window.catModalMixin,
+
+      /* ── State ─────────────────────────────────────────── */
+      categories: {{ categories | tojson }},
+      rules:      {{ rules      | tojson }},
+
+      /* Inline add rule */
+      addRule: {
+        editId: null,
+        form: { category_id: null, keywords: [], exclude_keywords: [], match_amounts: [], exclude_amounts: [], comment: '', subscription_period: 'n/a', tags: [], priority: 0 },
+        keywordInput: '',
+        tagInput: '',
+        tagDropdownOpen: false,
+        tagHighlightIndex: -1,
+        amountInput: '',
+        catSearch: '',
+        hideCategorisd: false,
+        filterByAmounts: false,
+        expandAmounts: false,
+        catDropdownOpen: false,
+        catHighlightedId: null,
+        results: [],
+        totalTxCount: 0,
+        loading: false,
+        timeout: null,
+        controller: null,
+        saving:  false,
+        error:   '',
+        editingKeyword: { index: null, type: null, value: '' },
+      },
+
+      rulesTable: {
+        sort_by: 'category',
+        sort_dir: 'asc',
+        page: 1,
+        per_page: parseInt(localStorage.getItem('rules_per_page') || '25'),
+      },
+
+      /* Quick-add category modal (accessible from category dropdown) */
+      newCatModal: {
+        open: false,
+        saving: false,
+        error: '',
+        pendingContext: null,  /* 'addRule' or 'ruleModal' — which dropdown to auto-select after save */
+        catSearch: '',          /* text in top-level field */
+        catDropdownOpen: false, /* dropdown open state */
+        selectedParentId: null, /* null = new top-level; number = existing cat ID */
+        subName: '',            /* optional sub-category name */
+        dropdownY: 0, dropdownX: 0, dropdownW: 0, /* fixed-position coords for dropdown */
+      },
+
+
+      /* ── Init ──────────────────────────────────────────── */
+      init() {
+        const params = new URLSearchParams(window.location.search);
+        const keyword = params.get('keyword');
+        if (keyword) {
+          this.addRule.form.keywords = [keyword];
+          this.$nextTick(() => {
+            this.searchAddRuleDescriptions();
+            const el = document.getElementById('add-rule-inline-heading');
+            if (el) el.closest('section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          });
+        }
+      },
+
+      /* ── Helpers ───────────────────────────────────────── */
+      formatAmount(amount) {
+        if (amount === null || amount === undefined) return '';
+        const abs = Math.abs(amount).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return (amount < 0 ? '-' : '+') + '£' + abs;
+      },
+
+      fmtMonthYear(dateStr) {
+        if (!dateStr) return null;
+        const [y, m] = dateStr.split('-');
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        return months[parseInt(m, 10) - 1] + '-' + y.slice(2);
+      },
+
+      fmtDateRange(minDate, maxDate) {
+        const a = this.fmtMonthYear(minDate);
+        if (!a) return null;
+        const b = this.fmtMonthYear(maxDate);
+        return a === b ? a : a + ' → ' + b;
+      },
+
+
+      /* ── Tag autocomplete helpers ──────────────────────────────────── */
+      allExistingTags() {
+        const set = new Set();
+        for (const rule of this.rules) {
+          if (rule.tags) for (const t of rule.tags) set.add(t);
+        }
+        return [...set].sort();
+      },
+
+      filteredTagSuggestions(input, currentTags) {
+        if (!input || input.length < 1) return [];
+        const lower = input.toLowerCase();
+        return this.allExistingTags()
+          .filter(t => t.toLowerCase().includes(lower) && !currentTags.includes(t))
+          .slice(0, 8);
+      },
+
+      commitTag(ctx) {
+        const suggs = this.filteredTagSuggestions(this[ctx].tagInput, this[ctx].form.tags);
+        const idx = this[ctx].tagHighlightIndex;
+        const val = (idx >= 0 && suggs[idx]) ? suggs[idx] : this[ctx].tagInput.trim();
+        if (val && !this[ctx].form.tags.includes(val)) this[ctx].form.tags.push(val);
+        this[ctx].tagInput = '';
+        this[ctx].tagDropdownOpen = false;
+        this[ctx].tagHighlightIndex = -1;
+      },
+
+      /* ── Existing-rule indicator ───────────────────────────────────── */
+      rulesForDesc(desc) {
+        return this.rules.filter(r => {
+          const d = desc.description;
+          const kws = (r.keywords && r.keywords.length > 0) ? r.keywords : [r.keyword];
+          const hit = kws.every(kw => r.case_sensitive
+            ? d.includes(kw)
+            : d.toLowerCase().includes(kw.toLowerCase()));
+          if (!hit) return false;
+          if (!r.match_amounts || r.match_amounts.length === 0) return true;
+          // Match if any of the description's amounts matches a rule amount filter
+          const descAmounts = (desc.amounts || []).map(x => x.amount);
+          return r.match_amounts.some(ra => descAmounts.some(da => Math.abs(da - ra) < 0.005));
+        });
+      },
+
+      /* ── Rules table sort + pagination ─────────────────────────────── */
+      sortedRules() {
+        const col = this.rulesTable.sort_by;
+        const dir = this.rulesTable.sort_dir === 'asc' ? 1 : -1;
+        return [...this.rules].sort((a, b) => {
+          let va, vb;
+          if (col === 'keyword') {
+            va = ((a.keywords && a.keywords[0]) || a.keyword || '').toLowerCase();
+            vb = ((b.keywords && b.keywords[0]) || b.keyword || '').toLowerCase();
+          } else if (col === 'matches') {
+            va = a.tx_count || 0; vb = b.tx_count || 0;
+          } else if (col === 'amount') {
+            va = (a.match_amounts && a.match_amounts.length > 0) ? Math.abs(a.match_amounts[0]) : -Infinity;
+            vb = (b.match_amounts && b.match_amounts.length > 0) ? Math.abs(b.match_amounts[0]) : -Infinity;
+          } else if (col === 'category') {
+            const ca = this.categories.find(c => c.id === a.category_id) || {name: a.category_name};
+            const cb = this.categories.find(c => c.id === b.category_id) || {name: b.category_name};
+            va = this.catDisplayName(ca).toLowerCase();
+            vb = this.catDisplayName(cb).toLowerCase();
+          } else if (col === 'dates') {
+            va = a.tx_min_date || ''; vb = b.tx_min_date || '';
+          } else if (col === 'subscription') {
+            va = a.is_subscription ? (a.subscription_period || 'monthly') : '';
+            vb = b.is_subscription ? (b.subscription_period || 'monthly') : '';
+          } else { va = 0; vb = 0; }
+          if (va < vb) return -dir;
+          if (va > vb) return dir;
+          return 0;
+        });
+      },
+      pagedRules() {
+        const start = (this.rulesTable.page - 1) * this.rulesTable.per_page;
+        return this.sortedRules().slice(start, start + this.rulesTable.per_page);
+      },
+      rulesTotalPages() {
+        return Math.max(1, Math.ceil(this.rules.length / this.rulesTable.per_page));
+      },
+      sortRulesBy(col) {
+        if (this.rulesTable.sort_by === col) {
+          this.rulesTable.sort_dir = this.rulesTable.sort_dir === 'asc' ? 'desc' : 'asc';
+        } else {
+          this.rulesTable.sort_by = col;
+          this.rulesTable.sort_dir = col === 'matches' || col === 'priority' ? 'desc' : 'asc';
+        }
+        this.rulesTable.page = 1;
+      },
+      rulesGoToPage(p) {
+        if (p < 1 || p > this.rulesTotalPages()) return;
+        this.rulesTable.page = p;
+      },
+      rulesPageRange() {
+        const total = this.rulesTotalPages();
+        const cur = this.rulesTable.page;
+        if (total <= 9) return Array.from({ length: total }, (_, i) => i + 1);
+        const result = [1];
+        if (cur > 4) result.push('...');
+        const start = Math.max(2, cur - 2);
+        const end = Math.min(total - 1, cur + 2);
+        for (let i = start; i <= end; i++) result.push(i);
+        if (cur < total - 3) result.push('...');
+        result.push(total);
+        return result;
+      },
+
+      /* ================================================================
+         CATEGORY COMBOBOX HELPERS
+         ================================================================ */
+      isLeaf(catId) {
+        return !this.categories.some(c => c.parent_id === catId);
+      },
+
+      catDisplayName(cat) {
+        if (cat.parent_id) {
+          const parent = this.categories.find(p => p.id === cat.parent_id);
+          return parent ? `${parent.name} > ${cat.name}` : cat.name;
+        }
+        return cat.name;
+      },
+
+      filteredCatOptions(search) {
+        const cats = this.categories.filter(c => !c.parent_id);
+        const subs = this.categories.filter(c => c.parent_id);
+        const all = [];
+        for (const cat of cats.sort((a,b) => (a.display_order - b.display_order) || a.name.localeCompare(b.name))) {
+          const children = subs.filter(s => s.parent_id === cat.id).sort((a,b) => a.name.localeCompare(b.name));
+          /* Top-level with sub-categories → non-selectable group header */
+          all.push({ id: cat.id, displayName: cat.name, isHeader: children.length > 0 });
+          for (const sub of children) {
+            all.push({ id: sub.id, displayName: cat.name + ' › ' + sub.name });
+          }
+        }
+        const filtered = search
+          ? all.filter(o => o.isHeader
+              ? o.displayName.toLowerCase().includes(search.toLowerCase())   /* keep header if name matches */
+              : o.displayName.toLowerCase().includes(search.toLowerCase()))
+          : all;
+        /* Always prepend the "add new" option; also show quick-create "New: X" when searching */
+        const prefix = [{ id: '__new__', displayName: '+ Add new category', isNew: true }];
+        if (search && search.trim()) {
+          prefix.push({ id: '__create__', displayName: search.trim(), isCreate: true });
+        }
+        return [...prefix, ...filtered];
+      },
+
+      async quickCreateCat(name, ctx) {
+        name = name.trim();
+        if (!name) return;
+        try {
+          const resp = await fetch('/api/categories', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, parent_id: null, color: null, display_order: 0 }),
+          });
+          if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.detail || 'Save failed'); }
+          const saved = await resp.json();
+          this.categories.push({ rule_count: 0, parent_name: null, ...saved });
+          this.selectCat({ id: saved.id, displayName: saved.name }, ctx);
+          Toast.show('Category created', { type: 'success' });
+        } catch(e) {
+          Toast.show(e.message || 'Failed to create category', { type: 'error' });
+        }
+      },
+
+      selectCat(opt, ctx) {
+        if (opt.id === '__new__') {
+          this[ctx].catDropdownOpen = false;
+          this.openNewCatModal(ctx);
+          return;
+        }
+        this[ctx].form.category_id = opt.id;
+        this[ctx].catSearch = opt.displayName;
+        this[ctx].catDropdownOpen = false;
+      },
+
+      clearCat(ctx) {
+        this[ctx].form.category_id = null;
+        this[ctx].catSearch = '';
+        this[ctx].catDropdownOpen = false;
+      },
+
+      navAddRuleCat(dir) {
+        const opts = this.filteredCatOptions(this.addRule.catSearch).filter(o => !o.isNew && !o.isHeader);
+        if (opts.length === 0) return;
+        // '__create__' is at position 0 when search text exists; regular items follow
+        const hasCreate = !!this.addRule.catSearch.trim();
+        const ids = hasCreate ? ['__create__', ...opts.filter(o => !o.isCreate).map(o => o.id)] : opts.map(o => o.id);
+        let cur = ids.indexOf(this.addRule.catHighlightedId);
+        if (cur === -1) cur = dir > 0 ? -1 : ids.length;
+        this.addRule.catHighlightedId = ids[Math.max(0, Math.min(ids.length - 1, cur + dir))];
+      },
+
+      acceptAddRuleCat() {
+        if (this.addRule.catHighlightedId === '__create__') {
+          this.addRule.catDropdownOpen = false;
+          this.openNewCatModal('addRule', this.addRule.catSearch.trim());
+          return;
+        }
+        if (this.addRule.catHighlightedId) {
+          const opt = this.filteredCatOptions(this.addRule.catSearch).find(o => o.id === this.addRule.catHighlightedId);
+          if (opt && !opt.isHeader) { this.selectCat(opt, 'addRule'); return; }
+        }
+        // No explicit highlight — fall back to selecting sole match
+        const single = this.filteredCatOptions(this.addRule.catSearch).filter(o => !o.isNew && !o.isHeader && !o.isCreate);
+        if (single.length === 1) this.selectCat(single[0], 'addRule');
+      },
+
+      openNewCatModal(context, prefillName) {
+        this.newCatModal = {
+          open: true, saving: false, error: '', pendingContext: context,
+          catSearch: prefillName || '', catDropdownOpen: false, selectedParentId: null, subName: '',
+          highlightedId: null, highlightNew: false,
+        };
+        this.$nextTick(() => {
+          if (this.$refs.newCatTopInput) this.$refs.newCatTopInput.focus();
+          if (prefillName) this.updateCatHighlight();
+        });
+      },
+
+      async saveNewCategory() {
+        const { catSearch, selectedParentId, subName, pendingContext } = this.newCatModal;
+        const topName = catSearch.trim();
+        if (!topName) { this.newCatModal.error = 'Top-level category name is required.'; return; }
+        this.newCatModal.saving = true;
+        this.newCatModal.error = '';
+        try {
+          let parentId = selectedParentId;
+
+          /* Case: existing top-level selected, no sub → just select it */
+          if (parentId && !subName.trim()) {
+            const existing = this.categories.find(c => c.id === parentId);
+            if (existing && pendingContext) {
+              this.selectCat({ id: existing.id, displayName: existing.name }, pendingContext);
+            }
+            this.closeNewCatModal();
+            return;
+          }
+
+          /* Case: new top-level name — create it first */
+          if (!parentId) {
+            const resp = await fetch('/api/categories', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: topName, parent_id: null, color: null, display_order: 0 }),
+            });
+            if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.detail || 'Save failed'); }
+            const saved = await resp.json();
+            this.categories.push({ rule_count: 0, parent_name: null, ...saved });
+            parentId = saved.id;
+
+            if (!subName.trim()) {
+              /* Top-level only — auto-select and done */
+              if (pendingContext) this.selectCat({ id: saved.id, displayName: saved.name }, pendingContext);
+              this.closeNewCatModal();
+              Toast.show('Category created', { type: 'success' });
+              return;
+            }
+          }
+
+          /* Case: create sub-category under parentId */
+          const parentCat = this.categories.find(c => c.id === parentId);
+          const resp = await fetch('/api/categories', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: subName.trim(), parent_id: parentId, color: null, display_order: 0 }),
+          });
+          if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.detail || 'Save failed'); }
+          const saved = await resp.json();
+          const pName = parentCat ? parentCat.name : topName;
+          this.categories.push({ rule_count: 0, parent_name: pName, ...saved });
+          if (pendingContext) {
+            this.selectCat({ id: saved.id, displayName: pName + ' › ' + saved.name }, pendingContext);
+          }
+          this.closeNewCatModal();
+          Toast.show('Category created', { type: 'success' });
+        } catch(e) {
+          this.newCatModal.error = e.message || 'An error occurred.';
+        } finally {
+          this.newCatModal.saving = false;
+        }
+      },
+
+
+      /* ================================================================
+         INLINE ADD RULE
+         ================================================================ */
+      commitKeywordEdit() {
+        const { index, type, value } = this.addRule.editingKeyword;
+        if (index === null) return;
+        this.addRule.editingKeyword = { index: null, type: null, value: '' };
+        const trimmed = value.trim();
+        if (type === 'include') {
+          if (trimmed) this.addRule.form.keywords.splice(index, 1, trimmed);
+          else this.addRule.form.keywords.splice(index, 1);
+        } else {
+          if (trimmed) this.addRule.form.exclude_keywords.splice(index, 1, trimmed);
+          else this.addRule.form.exclude_keywords.splice(index, 1);
+        }
+        this.searchAddRuleDescriptions();
+      },
+
+      onAddRuleKeywordInput() {
+        clearTimeout(this.addRule.timeout);
+        if (this.addRule.keywordInput.length < 2 && this.addRule.form.keywords.length === 0 && this.addRule.form.exclude_keywords.length === 0) {
+          this.addRule.results = [];
+          this.addRule.totalTxCount = 0;
+          return;
+        }
+        this.addRule.timeout = setTimeout(() => this.searchAddRuleDescriptions(), 300);
+      },
+
+      async searchAddRuleDescriptions() {
+        if (this.addRule.controller) this.addRule.controller.abort();
+        const ctrl = new AbortController();
+        this.addRule.controller = ctrl;
+        this.addRule.loading = true;
+        try {
+          // Build keyword list: committed tags + current input (if long enough)
+          const allKws = [...this.addRule.form.keywords];
+          if (this.addRule.keywordInput.trim().length >= 2) allKws.push(this.addRule.keywordInput.trim());
+          if (allKws.length === 0) { this.addRule.loading = false; this.addRule.results = []; return; }
+          let url = '/api/descriptions?keywords=' + encodeURIComponent(JSON.stringify(allKws));
+          if (this.addRule.filterByAmounts && this.addRule.form.match_amounts && this.addRule.form.match_amounts.length > 0) {
+            url += '&amounts=' + encodeURIComponent(JSON.stringify(this.addRule.form.match_amounts));
+          }
+          if (this.addRule.form.exclude_amounts && this.addRule.form.exclude_amounts.length > 0) {
+            url += '&exclude_amounts=' + encodeURIComponent(JSON.stringify(this.addRule.form.exclude_amounts));
+          }
+          if (this.addRule.form.exclude_keywords && this.addRule.form.exclude_keywords.length > 0) {
+            url += '&exclude_keywords=' + encodeURIComponent(JSON.stringify(this.addRule.form.exclude_keywords));
+          }
+          if (this.addRule.hideCategorisd) {
+            url += '&hide_categorised=true';
+          }
+          const resp = await fetch(url, { signal: ctrl.signal });
+          if (!resp.ok) throw new Error('Request failed');
+          const data = await resp.json();
+          this.addRule.results = data.results ?? data;
+          this.addRule.totalTxCount = data.total_tx_count ?? data.results?.reduce((s, d) => s + d.tx_count, 0) ?? 0;
+        } catch (e) {
+          if (!ctrl.signal.aborted) {
+            console.error('Description search failed:', e);
+            this.addRule.results = [];
+          }
+        } finally {
+          if (!ctrl.signal.aborted) this.addRule.loading = false;
+        }
+      },
+
+      async saveInlineRule() {
+        const form = this.addRule.form;
+        if (!form.keywords.length && !this.addRule.keywordInput.trim()) {
+          this.addRule.error = 'At least one keyword is required.';
+          return;
+        }
+        // Commit any partial keyword input before saving
+        if (this.addRule.keywordInput.trim() && !form.keywords.includes(this.addRule.keywordInput.trim())) {
+          form.keywords.push(this.addRule.keywordInput.trim());
+          this.addRule.keywordInput = '';
+        }
+        if (!form.category_id) {
+          this.addRule.error = 'Please select a category.';
+          return;
+        }
+        this.addRule.saving = true;
+        this.addRule.error  = '';
+        try {
+          // Commit any partial tag input
+          if (this.addRule.tagInput.trim() && !form.tags.includes(this.addRule.tagInput.trim())) {
+            form.tags.push(this.addRule.tagInput.trim());
+            this.addRule.tagInput = '';
+          }
+          const payload = {
+            category_id:      parseInt(form.category_id),
+            keyword:          form.keywords[0] || '',
+            keywords:         form.keywords,
+            match_amounts:    form.match_amounts,
+            exclude_amounts:  form.exclude_amounts,
+            exclude_keywords: form.exclude_keywords,
+            priority:         parseInt(form.priority) || 0,
+            case_sensitive:   false,
+            comment:          form.comment.trim() || null,
+            is_subscription:     form.subscription_period !== 'n/a',
+            subscription_period: form.subscription_period !== 'n/a' ? form.subscription_period : null,
+            tags:             form.tags,
+          };
+          const isEdit = !!this.addRule.editId;
+          const url = isEdit ? `/api/rules/${this.addRule.editId}` : '/api/rules';
+          const resp = await fetch(url, {
+            method: isEdit ? 'PATCH' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || 'Save failed');
+          }
+          const saved = await resp.json();
+          const cat = this.categories.find(c => c.id === form.category_id);
+          if (isEdit) {
+            const idx = this.rules.findIndex(r => r.id === this.addRule.editId);
+            if (idx !== -1) {
+              this.rules[idx] = {
+                ...this.rules[idx],
+                category_id:      parseInt(form.category_id),
+                keyword:          form.keywords[0] || '',
+                keywords:         [...form.keywords],
+                match_amounts:    [...form.match_amounts],
+                exclude_amounts:  [...form.exclude_amounts],
+                exclude_keywords: [...form.exclude_keywords],
+                priority:         parseInt(form.priority) || 0,
+                case_sensitive:   0,
+                comment:          form.comment.trim() || null,
+                category_name:    cat ? cat.name : this.rules[idx].category_name,
+                is_subscription:     form.subscription_period !== 'n/a',
+                subscription_period: form.subscription_period !== 'n/a' ? form.subscription_period : null,
+                tags:             [...form.tags],
+              };
+            }
+            Toast.show('Rule updated', { type: 'success' });
+          } else {
+            const enriched = {
+              id:               saved.id,
+              category_id:      form.category_id,
+              keyword:          form.keywords[0] || '',
+              keywords:         [...form.keywords],
+              match_amounts:    [...form.match_amounts],
+              exclude_amounts:  [...form.exclude_amounts],
+              exclude_keywords: [...form.exclude_keywords],
+              priority:         parseInt(form.priority) || 0,
+              case_sensitive:   0,
+              comment:          form.comment.trim() || null,
+              category_name:    cat ? cat.name : '',
+              tx_count:       saved.categorized ?? null,
+              is_subscription: form.subscription_period !== 'n/a',
+              subscription_period: form.subscription_period !== 'n/a' ? form.subscription_period : null,
+              tags:           [...form.tags],
+            };
+            this.rules.push(enriched);
+            this.rulesTable.page = 1;
+            if (cat) cat.rule_count = (cat.rule_count || 0) + 1;
+            const n = saved.categorized || 0;
+            Toast.show(n > 0 ? `Rule added — ${n} transaction${n !== 1 ? 's' : ''} categorized` : 'Rule added', { type: 'success' });
+          }
+          // Reset form
+          this.addRule.editId = null;
+          this.addRule.form = { category_id: null, keywords: [], exclude_keywords: [], match_amounts: [], exclude_amounts: [], comment: '', subscription_period: 'n/a', tags: [], priority: 0 };
+          this.addRule.keywordInput = '';
+          this.addRule.tagInput = '';
+          this.addRule.amountInput = '';
+          this.addRule.catSearch = '';
+          this.addRule.catDropdownOpen = false;
+          this.addRule.filterByAmounts = false;
+          this.addRule.results = [];
+        } catch (e) {
+          this.addRule.error = e.message || 'An error occurred.';
+        } finally {
+          this.addRule.saving = false;
+        }
+      },
+
+
+      /* ================================================================
+         RULES
+         ================================================================ */
+      openEditRule(rule) {
+        const cat = this.categories.find(c => c.id === rule.category_id);
+        this.addRule.editId = rule.id;
+        this.addRule.form = {
+          category_id:      rule.category_id,
+          keywords:         rule.keywords && rule.keywords.length > 0 ? [...rule.keywords] : (rule.keyword ? [rule.keyword] : []),
+          exclude_keywords: rule.exclude_keywords ? [...rule.exclude_keywords] : [],
+          match_amounts:    rule.match_amounts ? [...rule.match_amounts] : [],
+          exclude_amounts:  rule.exclude_amounts ? [...rule.exclude_amounts] : [],
+          comment:          rule.comment || '',
+          subscription_period: rule.is_subscription && rule.subscription_period ? rule.subscription_period : 'n/a',
+          tags:             rule.tags ? [...rule.tags] : [],
+          priority:         rule.priority ?? 0,
+        };
+        this.addRule.catSearch = cat ? this.catDisplayName(cat) : '';
+        this.addRule.keywordInput = '';
+        this.addRule.amountInput = '';
+        this.addRule.tagInput = '';
+        this.addRule.catDropdownOpen = false;
+        this.addRule.error = '';
+        this.addRule.hideCategorisd = false;
+        this.$nextTick(() => {
+          this.searchAddRuleDescriptions();
+          const el = document.getElementById('add-rule-inline-heading');
+          if (el) el.closest('section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          this.$refs.addRuleKeywordInput && this.$refs.addRuleKeywordInput.focus();
+        });
+      },
+
+      cancelEdit() {
+        this.addRule.editId = null;
+        this.addRule.form = { category_id: null, keywords: [], exclude_keywords: [], match_amounts: [], exclude_amounts: [], comment: '', subscription_period: 'n/a', tags: [], priority: 0 };
+        this.addRule.keywordInput = '';
+        this.addRule.tagInput = '';
+        this.addRule.amountInput = '';
+        this.addRule.catSearch = '';
+        this.addRule.catDropdownOpen = false;
+        this.addRule.results = [];
+        this.addRule.totalTxCount = 0;
+        this.addRule.error = '';
+        this.addRule.filterByAmounts = false;
+      },
+
+      async deleteRule(rule) {
+        if (!confirm(`Delete rule for keyword "${rule.keyword}"?`)) return;
+        try {
+          const resp = await fetch(`/api/rules/${rule.id}`, { method: 'DELETE' });
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || 'Delete failed');
+          }
+          this.rules = this.rules.filter(r => r.id !== rule.id);
+          this.rulesTable.page = 1;
+          const catObj = this.categories.find(c => c.id === rule.category_id);
+          if (catObj) catObj.rule_count = Math.max(0, (catObj.rule_count || 1) - 1);
+          Toast.show('Rule deleted', { type: 'success' });
+        } catch (e) {
+          Toast.show('Delete failed', { type: 'error', message: e.message });
+        }
+      },
+
+
+    };
+  }
+</script>
+{% endblock %}

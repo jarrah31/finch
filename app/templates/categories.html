@@ -1,0 +1,691 @@
+{% extends "base.html" %}
+
+{% block title %}Categories{% endblock %}
+
+{% block content %}
+<style>
+  [x-cloak] { display: none !important; }
+  .delete-confirm-backdrop {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.6);
+    backdrop-filter: blur(4px);
+    z-index: 9999;
+    padding: 1rem;
+  }
+  .cat-rule-tip {
+    position: fixed;
+    z-index: 9999;
+    background: var(--bg-elevated, #1e2130);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
+    box-shadow: 0 10px 32px rgba(0,0,0,0.6);
+    padding: 0.5rem 0;
+    width: max-content;
+    min-width: 220px;
+    max-width: 440px;
+    pointer-events: none;
+    font-size: 0.78rem;
+  }
+  .cat-rule-tip__group-label {
+    font-size: 0.63rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    padding: 0.55rem 0.875rem 0.2rem;
+  }
+  .cat-rule-tip__group-label + .cat-rule-tip__group-label,
+  .cat-rule-tip__sep + .cat-rule-tip__group-label { padding-top: 0.55rem; }
+  .cat-rule-tip__sep {
+    height: 1px;
+    background: rgba(255,255,255,0.07);
+    margin: 0.3rem 0;
+  }
+  .cat-rule-tip__row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.22rem 0.875rem;
+    white-space: nowrap;
+  }
+  .cat-rule-tip__keyword {
+    color: var(--text-primary);
+    font-weight: 500;
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .cat-rule-tip__meta {
+    display: flex;
+    gap: 0.3rem;
+    align-items: center;
+    margin-left: auto;
+    padding-left: 0.5rem;
+    flex-shrink: 0;
+  }
+  .cat-rule-tip__badge {
+    font-size: 0.65rem;
+    padding: 0.12rem 0.4rem;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.08);
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .cat-rule-tip__badge--sub { background: rgba(99,102,241,0.18); color: #a5b4fc; }
+  .cat-rule-tip__empty { color: var(--text-muted); font-style: italic; padding: 0.25rem 0.875rem; }
+  .cat-rule-tip__badge--amt { transition: filter 0.25s ease; }
+  [data-privacy] .cat-rule-tip__badge--amt { filter: blur(8px); user-select: none; }
+</style>
+<div x-data="categoriesPage()" x-init="init()" @mousemove.window="moveTip($event)">
+
+  <!-- Page header with Add button -->
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Categories</h1>
+      <p class="page-subtitle">Manage transaction categories and sub-categories</p>
+    </div>
+    <div style="display:flex;align-items:center;gap:0.75rem;">
+      <!-- Column count selector -->
+      <div style="display:flex;gap:1px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.1);border-radius:7px;padding:3px;" role="group" aria-label="Grid column count">
+        <template x-for="n in [1,2,3,4,5,6]" :key="n">
+          <button
+            type="button"
+            @click="colCount = n; localStorage.setItem('cat_col_count', n)"
+            :aria-label="n + ' columns'"
+            :title="n + ' columns'"
+            :aria-pressed="colCount === n"
+            style="width:30px;height:26px;border:none;cursor:pointer;border-radius:5px;display:flex;align-items:center;justify-content:center;background:transparent;transition:background 0.1s;gap:1px;padding:0;"
+            :style="{ background: colCount === n ? 'rgba(255,255,255,0.14)' : 'transparent' }"
+          >
+            <template x-for="i in colBars(n)" :key="i">
+              <span
+                style="width:3px;height:13px;border-radius:1.5px;display:block;transition:opacity 0.1s;"
+                :style="{ background: colCount === n ? 'var(--text-primary)' : 'var(--text-muted)', opacity: colCount === n ? '1' : '0.55' }"
+              ></span>
+            </template>
+          </button>
+        </template>
+      </div>
+      <button
+        class="btn btn-primary"
+        @click="openNewCatModal(null)"
+        aria-label="Add category"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="margin-right:0.375rem;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Category
+      </button>
+    </div>
+  </div>
+
+  <!-- Empty state -->
+  <template x-if="categories.length === 0">
+    <p class="no-data-message">No categories yet. Click "Add Category" to get started.</p>
+  </template>
+
+  <!-- Card grid -->
+  <div x-ref="catGrid" :style="{ display: 'grid', gap: '1rem', gridTemplateColumns: gridCols() }">
+    <template x-for="cat in topLevelCats()" :key="cat.id">
+      <div class="cat-card" :class="'cat-color-' + catColorName(cat, categories)"
+           @mouseenter="showTip($event, cat, true)"
+           @mouseleave="hideTip()">
+
+        <!-- Card header: name + action icons -->
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:0.5rem;margin-bottom:0.5rem;">
+          <span
+            x-text="cat.name"
+            style="font-weight:600;font-size:0.9375rem;color:var(--cc-text,var(--text-primary));flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.3;"
+          ></span>
+          <div style="display:flex;gap:0.125rem;flex-shrink:0;margin-top:-2px;">
+            <button
+              class="btn-icon"
+              style="width:22px;height:22px;"
+              @click="openNewCatModal(cat)"
+              :aria-label="'Add sub-category to ' + cat.name"
+              title="Add sub-category"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <button
+              class="btn-icon"
+              style="width:22px;height:22px;"
+              @click="openEditCategory(cat)"
+              :aria-label="'Edit ' + cat.name"
+              title="Edit"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+            <button
+              class="btn-icon btn-icon--danger"
+              style="width:22px;height:22px;"
+              @click="deleteCategory(cat)"
+              :aria-label="'Delete ' + cat.name"
+              title="Delete"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Stats line -->
+        <p style="font-size:0.72rem;color:var(--text-muted);margin:0 0 0.5rem;">
+          <span x-text="totalRuleCount(cat)"></span>
+          <template x-if="totalRuleCount(cat) === 1"><span> rule</span></template>
+          <template x-if="totalRuleCount(cat) !== 1"><span> rules</span></template>
+          <template x-if="subCats(cat.id).length > 0">
+            <span>
+              <span style="opacity:0.4;"> · </span>
+              <span x-text="subCats(cat.id).length"></span>
+              <template x-if="subCats(cat.id).length === 1"><span> sub-cat</span></template>
+              <template x-if="subCats(cat.id).length !== 1"><span> sub-cats</span></template>
+            </span>
+          </template>
+        </p>
+
+        <!-- Sub-category chips -->
+        <template x-if="subCats(cat.id).length > 0">
+          <div style="display:flex;flex-wrap:wrap;gap:0.3rem;padding-top:0.625rem;border-top:1px solid rgba(255,255,255,0.07);">
+            <template x-for="sub in subCats(cat.id)" :key="sub.id">
+              <div class="cat-subpill"
+                   @mouseenter.stop="showTip($event, sub, false)"
+                   @mouseleave.stop="showTip($event, cat, true)">
+                <span x-text="sub.name" @click="openEditCategory(sub)" :title="'Edit ' + sub.name + ' (' + (sub.rule_count || 0) + ' rules)'"></span>
+                <button class="cat-subpill__delete" @click="deleteCategory(sub)" :aria-label="'Delete ' + sub.name">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+            </template>
+          </div>
+        </template>
+
+      </div>
+    </template>
+  </div>
+
+
+  <!-- Delete confirmation modal -->
+  <div
+    x-show="deleteConfirm.open"
+    x-cloak
+    x-transition:enter="transition ease-out duration-150"
+    x-transition:enter-start="opacity-0"
+    x-transition:enter-end="opacity-100"
+    x-transition:leave="transition ease-in duration-100"
+    x-transition:leave-start="opacity-100"
+    x-transition:leave-end="opacity-0"
+    class="delete-confirm-backdrop"
+    @keydown.escape.window="deleteConfirm.open = false"
+  >
+    <div
+      x-transition:enter="transition ease-out duration-150"
+      x-transition:enter-start="opacity-0 scale-95"
+      x-transition:enter-end="opacity-100 scale-100"
+      style="background:var(--bg-surface);border:1px solid var(--border-default);border-radius:var(--radius-xl);padding:2rem;max-width:400px;width:100%;box-shadow:0 24px 64px rgba(0,0,0,0.5);text-align:center;"
+    >
+      <!-- Danger icon -->
+      <div style="width:52px;height:52px;border-radius:50%;background:var(--rose-glow,rgba(244,63,94,0.15));display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--rose-400,#fb7185)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </div>
+      <h3 style="font-size:var(--text-lg);font-weight:var(--weight-bold);color:var(--text-primary);margin:0 0 0.625rem;">Delete category?</h3>
+      <p style="font-size:var(--text-sm);color:var(--text-secondary);line-height:1.6;margin:0 0 1.5rem;">
+        Delete <strong style="color:var(--text-primary);" x-text="'&quot;' + (deleteConfirm.cat?.name || '') + '&quot;'"></strong>?
+        Rules assigned to it will be unassigned.
+      </p>
+      <div style="display:flex;gap:0.75rem;justify-content:center;">
+        <button
+          @click="deleteConfirm.open = false"
+          class="btn btn-secondary"
+          style="min-width:90px;"
+        >Cancel</button>
+        <button
+          @click="confirmDelete()"
+          class="btn btn-danger"
+          style="min-width:90px;"
+        >Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rule tooltip -->
+  <div
+    x-show="catTip !== null"
+    x-cloak
+    class="cat-rule-tip"
+    :style="catTip ? { top: catTip.y + 'px', left: catTip.x + 'px' } : {}"
+  >
+    <template x-if="catTip">
+      <div>
+        <template x-for="(group, gi) in catTip.groups" :key="gi">
+          <div>
+            <template x-if="gi > 0"><div class="cat-rule-tip__sep"></div></template>
+            <template x-if="group.label">
+              <div class="cat-rule-tip__group-label" x-text="group.label"></div>
+            </template>
+            <template x-for="(rule, ri) in group.rules" :key="ri">
+              <div class="cat-rule-tip__row">
+                <span class="cat-rule-tip__keyword" x-text="ruleKeywords(rule)"></span>
+                <span class="cat-rule-tip__meta">
+                  <template x-if="rule.subscription_period && rule.subscription_period !== 'n/a'">
+                    <span class="cat-rule-tip__badge cat-rule-tip__badge--sub" x-text="rule.subscription_period"></span>
+                  </template>
+                  <template x-if="ruleAmounts(rule)">
+                    <span class="cat-rule-tip__badge cat-rule-tip__badge--amt" x-text="ruleAmounts(rule)"></span>
+                  </template>
+                </span>
+              </div>
+            </template>
+          </div>
+        </template>
+        <template x-if="catTip.groups.length === 0">
+          <div class="cat-rule-tip__empty">No rules</div>
+        </template>
+      </div>
+    </template>
+  </div>
+
+  {% include 'partials/cat_modal.html' %}
+
+  <!-- ================================================================
+       CATEGORY MODAL
+       ================================================================ -->
+  <div
+    x-show="categoryModal.open"
+    x-transition:enter="transition ease-out duration-150"
+    x-transition:enter-start="opacity-0"
+    x-transition:enter-end="opacity-100"
+    x-transition:leave="transition ease-in duration-100"
+    x-transition:leave-start="opacity-100"
+    x-transition:leave-end="opacity-0"
+    class="modal"
+    role="dialog"
+    :aria-modal="categoryModal.open"
+    :aria-labelledby="categoryModal.editId ? 'edit-cat-heading' : 'add-cat-heading'"
+    @keydown.escape.window="closeCategoryModal()"
+    style="display:none;"
+  >
+    <div class="modal__backdrop" @click="closeCategoryModal()" aria-hidden="true"></div>
+    <div
+      class="modal__panel"
+      x-transition:enter="transition ease-out duration-150"
+      x-transition:enter-start="opacity-0 transform scale-95"
+      x-transition:enter-end="opacity-100 transform scale-100"
+      role="document"
+    >
+      <div class="modal__header">
+        <h3 class="modal__title" :id="categoryModal.editId ? 'edit-cat-heading' : 'add-cat-heading'" x-text="categoryModal.editId ? 'Edit Category' : 'Add Category'"></h3>
+        <button class="btn-icon" @click="closeCategoryModal()" aria-label="Close dialog">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="modal__body">
+        <div class="form-group">
+          <label for="cat-parent" class="form-label">Parent category <span class="text-xs" style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <select id="cat-parent" class="form-select" x-model="categoryModal.form.parent_id">
+            <option value="">Top-level (no parent)</option>
+            <template x-for="cat in topLevelCats().filter(c => c.id !== categoryModal.editId)" :key="cat.id">
+              <option :value="cat.id" x-text="cat.name"></option>
+            </template>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="cat-name" class="form-label">Name <span aria-hidden="true" style="color:var(--color-rose,#f43f5e);">*</span></label>
+          <input id="cat-name" type="text" class="form-input" placeholder="e.g. Groceries" x-model="categoryModal.form.name" @keydown.enter="saveCategory()" x-ref="catNameInput" required aria-required="true">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Colour</label>
+          <div class="cat-color-picker" role="group" aria-label="Category colour">
+            <button type="button" :class="'cat-swatch cat-swatch--auto' + (!categoryModal.form.color ? ' active' : '')" @click="categoryModal.form.color = ''" title="Auto (assigned automatically)" aria-label="Auto colour">Auto</button>
+            <template x-for="c in CAT_PALETTE" :key="c">
+              <button type="button" :class="'cat-swatch cat-color-' + c + (categoryModal.form.color === c ? ' active' : '')" @click="categoryModal.form.color = c" :title="c.charAt(0).toUpperCase() + c.slice(1)" :aria-label="c.charAt(0).toUpperCase() + c.slice(1) + ' colour'" :aria-pressed="categoryModal.form.color === c"></button>
+            </template>
+          </div>
+          <p class="text-xs" style="color:var(--text-muted);margin-top:0.375rem;">Auto assigns a colour from the palette based on category order.</p>
+        </div>
+        <div class="form-group">
+          <label for="cat-order" class="form-label">Display order</label>
+          <input id="cat-order" type="number" class="form-input" placeholder="0" x-model.number="categoryModal.form.display_order" min="0" style="width:120px;">
+          <p class="text-xs" style="color:var(--text-muted);margin-top:0.25rem;">Lower numbers appear first in lists.</p>
+        </div>
+        <div x-show="categoryModal.error" x-text="categoryModal.error" class="text-sm" style="color:var(--color-rose,#f43f5e);padding:0.5rem 0.75rem;background:rgba(244,63,94,0.1);border-radius:6px;margin-top:0.25rem;" role="alert"></div>
+      </div>
+      <div class="modal__footer">
+        <button class="btn btn-secondary" @click="closeCategoryModal()">Cancel</button>
+        <button class="btn btn-primary" @click="saveCategory()" :disabled="categoryModal.saving || !categoryModal.form.name.trim()">
+          <template x-if="categoryModal.saving">
+            <div class="spinner" style="width:14px;height:14px;margin-right:6px;" aria-label="Saving"></div>
+          </template>
+          <span x-text="categoryModal.editId ? 'Save Changes' : 'Add Category'"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function categoriesPage() {
+    return {
+      ...window.catModalMixin,
+
+      categories: {{ categories | tojson }},
+      catRules:   {{ cat_rules | tojson }},
+      catTip: null,
+      _tipMouse: { x: 0, y: 0 },
+      deleteConfirm: { open: false, cat: null },
+
+      newCatModal: {
+        open: false,
+        saving: false,
+        error: '',
+        catSearch: '',
+        catDropdownOpen: false,
+        selectedParentId: null,
+        subName: '',
+        highlightedId: null,
+        highlightNew: false,
+        dropdownY: 0, dropdownX: 0, dropdownW: 0,
+      },
+
+      categoryModal: {
+        open: false,
+        editId: null,
+        saving: false,
+        error: '',
+        form: { name: '', display_order: 0, parent_id: '', color: '' },
+      },
+
+      expandedCats: {},
+      catsCollapsed: false,
+      colCount: parseInt(localStorage.getItem('cat_col_count')) || 3,
+      _containerWidth: 1000,
+
+      init() {
+        this.$nextTick(() => {
+          if (this.$refs.catGrid) this._containerWidth = this.$refs.catGrid.offsetWidth;
+        });
+        const ro = new ResizeObserver(entries => {
+          this._containerWidth = entries[0].contentRect.width;
+        });
+        this.$nextTick(() => { if (this.$refs.catGrid) ro.observe(this.$refs.catGrid); });
+      },
+
+      colBars(n) { return Array.from({ length: n }, (_, i) => i); },
+
+      gridCols() {
+        const minCard = 160;
+        const gap = 16;
+        const fits = Math.max(1, Math.floor((this._containerWidth + gap) / (minCard + gap)));
+        const cols = Math.min(this.colCount, fits);
+        return `repeat(${cols}, 1fr)`;
+      },
+
+      /* ── Rule tooltip ────────────────────────────────────── */
+      ruleKeywords(rule) {
+        if (rule.keywords) {
+          try { const kws = JSON.parse(rule.keywords); if (kws.length) return kws.join(' + '); } catch(e) {}
+        }
+        return rule.keyword || '';
+      },
+
+      ruleAmounts(rule) {
+        if (!rule.match_amounts) return null;
+        try {
+          const amts = JSON.parse(rule.match_amounts);
+          if (!amts || !amts.length) return null;
+          return amts.map(a => '£' + Math.abs(a).toFixed(2)).join(' / ');
+        } catch(e) { return null; }
+      },
+
+      showTip(event, cat, includeSubCats) {
+        const ownRules = this.catRules.filter(r => r.category_id === cat.id);
+        const groups = [];
+        if (ownRules.length) {
+          groups.push({ label: includeSubCats && this.subCats(cat.id).length ? cat.name : null, rules: ownRules });
+        }
+        if (includeSubCats) {
+          for (const sub of this.subCats(cat.id)) {
+            const subRules = this.catRules.filter(r => r.category_id === sub.id);
+            if (subRules.length) groups.push({ label: sub.name, rules: subRules });
+          }
+        }
+        if (groups.length === 0 && !includeSubCats) return; // sub-cat with no rules — nothing to show
+        this.catTip = { groups, x: event.clientX + 14, y: event.clientY - 8 };
+      },
+
+      hideTip() { this.catTip = null; },
+
+      moveTip(event) {
+        if (!this.catTip) return;
+        const tx = event.clientX + 14;
+        const ty = event.clientY - 8;
+        // Clamp to viewport
+        const pad = 8;
+        const tipW = 450, tipH = 300;
+        this.catTip = { ...this.catTip,
+          x: Math.min(tx, window.innerWidth  - tipW - pad),
+          y: Math.min(ty, window.innerHeight - tipH - pad),
+        };
+      },
+
+      /* ── Category hierarchy helpers ─────────────────────── */
+      topLevelCats() {
+        return this.categories.filter(c => !c.parent_id).sort((a, b) => a.name.localeCompare(b.name));
+      },
+
+      subCats(parentId) {
+        return this.categories.filter(c => c.parent_id === parentId).sort((a, b) => a.name.localeCompare(b.name));
+      },
+
+      totalRuleCount(cat) {
+        const subs = this.subCats(cat.id);
+        if (subs.length === 0) return cat.rule_count;
+        return subs.reduce((sum, s) => sum + (s.rule_count || 0), cat.rule_count || 0);
+      },
+
+      toggleCat(id) {
+        this.expandedCats = { ...this.expandedCats, [id]: !this.expandedCats[id] };
+      },
+
+      toggleAllCats() {
+        const tops = this.topLevelCats();
+        const anyExpanded = tops.some(c => this.expandedCats[c.id]);
+        const next = {};
+        if (!anyExpanded) {
+          tops.forEach(c => { next[c.id] = true; });
+        }
+        this.expandedCats = next;
+      },
+
+      isLeaf(catId) {
+        return !this.categories.some(c => c.parent_id === catId);
+      },
+
+      catDisplayName(cat) {
+        if (cat.parent_id) {
+          const parent = this.categories.find(p => p.id === cat.parent_id);
+          return parent ? `${parent.name} > ${cat.name}` : cat.name;
+        }
+        return cat.name;
+      },
+
+      filteredCatOptions(search) {
+        const cats = this.categories.filter(c => !c.parent_id);
+        const subs = this.categories.filter(c => c.parent_id);
+        const all = [];
+        for (const cat of cats.sort((a,b) => (a.display_order - b.display_order) || a.name.localeCompare(b.name))) {
+          all.push({ id: cat.id, displayName: cat.name });
+          for (const sub of subs.filter(s => s.parent_id === cat.id).sort((a,b) => a.name.localeCompare(b.name))) {
+            all.push({ id: sub.id, displayName: cat.name + ' › ' + sub.name });
+          }
+        }
+        if (!search) return all;
+        return all.filter(o => o.displayName.toLowerCase().includes(search.toLowerCase()));
+      },
+
+      openNewCatModal(parentCat) {
+        this.newCatModal = {
+          open: true, saving: false, error: '',
+          catSearch: parentCat ? parentCat.name : '',
+          catDropdownOpen: false,
+          selectedParentId: parentCat ? parentCat.id : null,
+          subName: '',
+          highlightedId: null,
+          highlightNew: false,
+          dropdownY: 0, dropdownX: 0, dropdownW: 0,
+        };
+        this.$nextTick(() => {
+          if (parentCat) {
+            // pre-selected parent — focus the sub-category input
+            const el = document.getElementById('new-cat-sub');
+            if (el) el.focus();
+          } else {
+            this.$refs.newCatTopInput && this.$refs.newCatTopInput.focus();
+            this.$nextTick(() => this.updateCatHighlight());
+          }
+        });
+      },
+
+      async saveNewCategory() {
+        const { catSearch, selectedParentId, subName } = this.newCatModal;
+        const topName = catSearch.trim();
+        if (!topName) { this.newCatModal.error = 'Top-level category name is required.'; return; }
+        this.newCatModal.saving = true;
+        this.newCatModal.error = '';
+        try {
+          let parentId = selectedParentId;
+
+          /* Existing top-level selected, no sub → nothing new to create; just close */
+          if (parentId && !subName.trim()) {
+            this.closeNewCatModal();
+            return;
+          }
+
+          /* New top-level name — create it first */
+          if (!parentId) {
+            const resp = await fetch('/api/categories', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ name: topName, parent_id: null, color: null, display_order: 0 }),
+            });
+            if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.detail || 'Save failed'); }
+            const saved = await resp.json();
+            this.categories.push({ rule_count: 0, parent_name: null, ...saved });
+            parentId = saved.id;
+
+            if (!subName.trim()) {
+              this.closeNewCatModal();
+              Toast.show('Category added', { type: 'success' });
+              return;
+            }
+          }
+
+          /* Create sub-category */
+          const parentCat = this.categories.find(c => c.id === parentId);
+          const resp = await fetch('/api/categories', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: subName.trim(), parent_id: parentId, color: null, display_order: 0 }),
+          });
+          if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.detail || 'Save failed'); }
+          const saved = await resp.json();
+          this.categories.push({ rule_count: 0, parent_name: parentCat ? parentCat.name : topName, ...saved });
+          this.closeNewCatModal();
+          Toast.show('Category added', { type: 'success' });
+        } catch(e) {
+          this.newCatModal.error = e.message || 'An error occurred.';
+        } finally {
+          this.newCatModal.saving = false;
+        }
+      },
+
+      openEditCategory(cat) {
+        this.categoryModal = {
+          open:   true,
+          editId: cat.id,
+          saving: false,
+          error:  '',
+          form: {
+            name:          cat.name,
+            display_order: cat.display_order,
+            parent_id:     cat.parent_id || '',
+            color:         cat.color || '',
+          },
+        };
+        this.$nextTick(() => this.$refs.catNameInput && this.$refs.catNameInput.focus());
+      },
+
+      closeCategoryModal() {
+        this.categoryModal.open = false;
+      },
+
+      async saveCategory() {
+        const { editId, form } = this.categoryModal;
+        if (!form.name.trim()) {
+          this.categoryModal.error = 'Category name is required.';
+          return;
+        }
+        this.categoryModal.saving = true;
+        this.categoryModal.error  = '';
+        try {
+          const payload = {
+            name:          form.name.trim(),
+            display_order: form.display_order || 0,
+            parent_id:     form.parent_id || null,
+            color:         form.color || null,
+          };
+          const url    = editId ? `/api/categories/${editId}` : '/api/categories';
+          const method = editId ? 'PATCH' : 'POST';
+          const resp = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || 'Save failed');
+          }
+          const saved = await resp.json();
+          if (editId) {
+            const idx = this.categories.findIndex(c => c.id === editId);
+            if (idx !== -1) {
+              this.categories[idx] = { ...this.categories[idx], ...payload, color: form.color || null };
+            }
+            Toast.show('Category updated', { type: 'success' });
+          } else {
+            this.categories.push({ rule_count: 0, parent_name: null, ...saved });
+            Toast.show('Category added', { type: 'success' });
+          }
+          this.closeCategoryModal();
+        } catch (e) {
+          this.categoryModal.error = e.message || 'An error occurred.';
+        } finally {
+          this.categoryModal.saving = false;
+        }
+      },
+
+      deleteCategory(cat) {
+        this.deleteConfirm = { open: true, cat };
+      },
+      async confirmDelete() {
+        const cat = this.deleteConfirm.cat;
+        this.deleteConfirm.open = false;
+        try {
+          const resp = await fetch(`/api/categories/${cat.id}`, { method: 'DELETE' });
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            throw new Error(err.detail || 'Delete failed');
+          }
+          this.categories = this.categories.filter(c => c.id !== cat.id);
+          Toast.show('Category deleted', { type: 'success' });
+        } catch (e) {
+          Toast.show('Delete failed', { type: 'error', message: e.message });
+        }
+      },
+    };
+  }
+</script>
+{% endblock %}

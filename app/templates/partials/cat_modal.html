@@ -1,0 +1,146 @@
+<!-- ================================================================
+     QUICK-ADD CATEGORY MODAL
+     Shared between rules.html and categories.html.
+     Requires newCatModal state + catModalMixin + saveNewCategory() + closeNewCatModal()
+     ================================================================ -->
+<div
+  x-show="newCatModal.open"
+  x-transition:enter="transition ease-out duration-150"
+  x-transition:enter-start="opacity-0"
+  x-transition:enter-end="opacity-100"
+  x-transition:leave="transition ease-in duration-100"
+  x-transition:leave-start="opacity-100"
+  x-transition:leave-end="opacity-0"
+  class="modal"
+  role="dialog"
+  :aria-modal="newCatModal.open"
+  aria-labelledby="new-cat-heading"
+  @keydown.escape.window="closeNewCatModal()"
+  style="display:none;"
+>
+  <div class="modal__backdrop" @click="closeNewCatModal()" aria-hidden="true"></div>
+  <div
+    class="modal__panel"
+    x-transition:enter="transition ease-out duration-150"
+    x-transition:enter-start="opacity-0 transform scale-95"
+    x-transition:enter-end="opacity-100 transform scale-100"
+    role="document"
+  >
+    <div class="modal__header">
+      <h3 class="modal__title" id="new-cat-heading">Add New Category</h3>
+      <button class="btn-icon" @click="closeNewCatModal()" aria-label="Close dialog">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal__body">
+
+      <!-- Top-level category (search + dropdown) -->
+      <div class="form-group">
+        <label class="form-label">Top-level category <span aria-hidden="true" style="color:var(--color-rose,#f43f5e);">*</span></label>
+        <div style="position:relative;" @click.outside="newCatModal.catDropdownOpen = false">
+          <div style="position:relative;" class="input-with-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="input-icon" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input
+              type="text"
+              class="form-input"
+              style="padding-right:56px;"
+              placeholder="Search existing or type a new name…"
+              x-model="newCatModal.catSearch"
+              x-ref="newCatTopInput"
+              @focus="openTopCatDropdown(); updateCatHighlight()"
+              @input="newCatModal.selectedParentId = null; openTopCatDropdown(); updateCatHighlight()"
+              @keydown.escape="newCatModal.catDropdownOpen = false"
+              @keydown.enter.prevent="acceptCatHighlight()"
+              @keydown.tab="if (newCatModal.highlightedId || newCatModal.highlightNew) { $event.preventDefault(); acceptCatHighlight(); }"
+              @keydown.arrow-down.prevent="navCatHighlight(1)"
+              @keydown.arrow-up.prevent="navCatHighlight(-1)"
+              autocomplete="off"
+              aria-label="Top-level category"
+            >
+            <div style="position:absolute;right:4px;top:50%;transform:translateY(-50%);display:flex;align-items:center;gap:0;">
+              <button type="button" class="btn-icon" style="width:24px;height:24px;" x-show="newCatModal.catSearch" @click.stop="newCatModal.catSearch = ''; newCatModal.selectedParentId = null; newCatModal.catDropdownOpen = false" aria-label="Clear" tabindex="-1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+              <button type="button" class="btn-icon" style="width:24px;height:24px;" @click.stop="newCatModal.catDropdownOpen ? newCatModal.catDropdownOpen = false : openTopCatDropdown()" aria-label="Show categories" tabindex="-1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+            </div>
+          </div>
+          <!-- Top-level dropdown — fixed position to escape modal overflow clipping -->
+          <div
+            x-show="newCatModal.catDropdownOpen"
+            :style="{ position: 'fixed', zIndex: '9999', top: newCatModal.dropdownY + 'px', left: newCatModal.dropdownX + 'px', width: newCatModal.dropdownW + 'px', maxHeight: '200px', overflowY: 'auto', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }"
+          >
+            <!-- "New: X" only shown when search text doesn't exactly match an existing category -->
+            <template x-if="newCatModal.catSearch.trim() && !exactCatTopMatch(newCatModal.catSearch)">
+              <div style="border-bottom:1px solid var(--border-subtle,rgba(255,255,255,0.06));padding:0.25rem;">
+                <button
+                  type="button"
+                  :style="{ background: newCatModal.highlightNew ? 'rgba(99,102,241,0.15)' : 'transparent' }"
+                  style="width:100%;text-align:left;padding:0.5rem 0.75rem;border:none;cursor:pointer;border-radius:4px;font-size:var(--text-sm);transition:background 0.1s;color:var(--color-indigo,#6366f1);font-weight:500;display:flex;align-items:center;gap:0.4rem;"
+                  @click.stop="newCatModal.selectedParentId = null; newCatModal.catDropdownOpen = false; $nextTick(() => document.getElementById('new-cat-sub').focus())"
+                  @mouseenter="newCatModal.highlightNew = true; newCatModal.highlightedId = null"
+                  @mouseleave="updateCatHighlight()"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  New: "<span x-text="newCatModal.catSearch" style="color:var(--text-primary);"></span>"
+                </button>
+              </div>
+            </template>
+            <template x-if="filteredTopLevelCats(newCatModal.catSearch).length === 0 && !newCatModal.catSearch.trim()">
+              <p style="padding:0.5rem 1rem;color:var(--text-muted);font-size:var(--text-sm);margin:0;">No categories yet.</p>
+            </template>
+            <ul style="list-style:none;margin:0;padding:0.25rem;">
+              <template x-for="cat in filteredTopLevelCats(newCatModal.catSearch)" :key="cat.id">
+                <li>
+                  <button
+                    type="button"
+                    style="width:100%;text-align:left;padding:0.5rem 0.625rem;border:none;cursor:pointer;border-radius:4px;font-size:var(--text-sm);display:flex;align-items:center;gap:0.5rem;transition:background 0.1s;"
+                    :style="{ background: newCatModal.selectedParentId === cat.id ? 'rgba(255,255,255,0.1)' : (newCatModal.highlightedId === cat.id ? 'rgba(99,102,241,0.12)' : 'transparent') }"
+                    @click.stop="newCatModal.selectedParentId = cat.id; newCatModal.catSearch = cat.name; newCatModal.catDropdownOpen = false; newCatModal.highlightedId = null; $nextTick(() => document.getElementById('new-cat-sub').focus())"
+                    @mouseenter="newCatModal.highlightedId = cat.id; newCatModal.highlightNew = false"
+                    @mouseleave="updateCatHighlight()"
+                  >
+                    <span x-text="cat.name" style="flex:1;color:var(--text-primary);"></span>
+                    <svg x-show="newCatModal.selectedParentId === cat.id" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                  </button>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </div>
+        <!-- Context hint -->
+        <p x-show="newCatModal.selectedParentId && !newCatModal.subName.trim()"
+          style="margin:0.3rem 0 0;font-size:0.72rem;color:var(--text-muted);">Existing category selected — add a sub-category name below, or save to use it directly.</p>
+        <p x-show="newCatModal.catSearch.trim() && !newCatModal.selectedParentId"
+          style="margin:0.3rem 0 0;font-size:0.72rem;color:var(--text-muted);">A new top-level category will be created.</p>
+      </div>
+
+      <!-- Sub-category name -->
+      <div class="form-group">
+        <label for="new-cat-sub" class="form-label">Sub-category <span class="text-xs" style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+        <input
+          id="new-cat-sub"
+          type="text"
+          class="form-input"
+          placeholder="e.g. Groceries"
+          x-model="newCatModal.subName"
+          @keydown.enter="saveNewCategory()"
+        >
+      </div>
+
+      <div x-show="newCatModal.error" x-text="newCatModal.error" class="text-sm"
+        style="color:var(--color-rose,#f43f5e);padding:0.5rem 0.75rem;background:rgba(244,63,94,0.1);border-radius:6px;"
+        role="alert"></div>
+    </div>
+    <div class="modal__footer">
+      <button class="btn btn-secondary" @click="closeNewCatModal()">Cancel</button>
+      <button class="btn btn-primary" @click="saveNewCategory()" :disabled="newCatModal.saving || !newCatModal.catSearch.trim()">
+        <template x-if="newCatModal.saving">
+          <div class="spinner" style="width:14px;height:14px;margin-right:6px;" aria-label="Saving"></div>
+        </template>
+        <span x-text="newCatModal.selectedParentId && !newCatModal.subName.trim() ? 'Select Category' : 'Add Category'"></span>
+      </button>
+    </div>
+  </div>
+</div>

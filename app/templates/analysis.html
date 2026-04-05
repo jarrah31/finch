@@ -1,0 +1,2728 @@
+{% extends "base.html" %}
+
+{% block title %}Analysis{% endblock %}
+{% block title_mobile %}Analysis{% endblock %}
+
+{% block content %}
+<div x-data="analysis()" x-init="init()" @keydown.window="handleKeydown($event)">
+
+  {% if not periods %}
+  <div class="empty-state">
+    <div class="empty-state-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+      </svg>
+    </div>
+    <h2 class="empty-state-title">No data to analyse yet</h2>
+    <p class="empty-state-body">
+      Import transactions on the <a href="/transactions">Transactions</a> page and configure
+      your pay-day keyword in <a href="/settings">Settings</a> to start seeing analysis.
+    </p>
+    <div class="empty-state-actions">
+      <a href="/transactions" class="btn btn-primary">Import CSV</a>
+    </div>
+  </div>
+
+  {% else %}
+
+  {# ── Page header ── #}
+  <div class="dashboard-header">
+    <div class="dashboard-header-left">
+      <h1 class="page-title">Analysis</h1>
+      <p class="page-subtitle" x-text="selectedPeriodDateRange || 'Loading...'"></p>
+    </div>
+    <div class="dashboard-header-right">
+      <div class="period-drop-wrap" @click.outside="periodDrop.open = false">
+        <button type="button" class="period-select"
+                :aria-expanded="periodDrop.open"
+                @click="periodDrop.open = !periodDrop.open"
+                aria-label="Select pay period"
+                title="Select period  (← → to step between periods)">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+               style="flex-shrink:0;color:var(--text-muted)" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          <span class="period-select-label" x-text="selectedPeriodDateRange || 'Loading...'"></span>
+          <svg class="period-select-chevron" xmlns="http://www.w3.org/2000/svg" width="14" height="14"
+               viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+               stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m6 9 6 6 6-6"/>
+          </svg>
+        </button>
+        <div class="period-drop-panel" x-show="periodDrop.open" x-cloak>
+          <ul style="list-style:none;margin:0;padding:0;">
+            <template x-for="p in periods" :key="p.id">
+              <li class="period-drop-item"
+                  :class="String(p.id) === String(selectedPeriodId) ? 'is-active' : ''"
+                  @click="selectPeriodAnalysis(p)">
+                <span x-text="p.option_label"></span>
+              </li>
+            </template>
+          </ul>
+        </div>
+      </div>
+      <button type="button" class="period-nav-btn"
+              @click="handleKeydown({key:'ArrowLeft',preventDefault:()=>{}})"
+              :disabled="!customRange && periods.findIndex(p=>String(p.id)===String(selectedPeriodId)) >= periods.length - 1"
+              title="Previous period (←)">
+        ←
+      </button>
+      <button type="button" class="period-nav-btn"
+              @click="handleKeydown({key:'ArrowRight',preventDefault:()=>{}})"
+              :disabled="customRange ? !canStepCustomForward() : periods.findIndex(p=>String(p.id)===String(selectedPeriodId)) <= 0"
+              title="Next period (→)">
+        →
+      </button>
+      <button type="button"
+              class="cr-range-btn"
+              :class="customRange ? 'active' : ''"
+              @click="customRangeModal.open = true"
+              title="Set a custom date range">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          <line x1="8" y1="14" x2="16" y2="14"/>
+        </svg>
+        <span x-text="customRange ? customRange.label : 'Custom Range'"></span>
+        <template x-if="customRange">
+          <span @click.stop="clearCustomRange()" title="Clear custom range"
+                style="opacity:0.7;line-height:1;margin-left:0.1rem;">✕</span>
+        </template>
+      </button>
+    </div>
+  </div>
+
+  {# ── Custom Date Range Modal ── #}
+  <template x-if="customRangeModal.open">
+    <div class="cr-modal-overlay" @click.self="customRangeModal.open = false" @keydown.escape.window="customRangeModal.open = false">
+      <div class="cr-modal">
+        <p class="cr-modal-title">Custom Date Range</p>
+        <div class="cr-tabs">
+          <button class="cr-tab" :class="customRangeModal.mode==='rolling'?'active':''"
+                  @click="customRangeModal.mode='rolling'">Rolling period</button>
+          <button class="cr-tab" :class="customRangeModal.mode==='custom'?'active':''"
+                  @click="customRangeModal.mode='custom'">Custom start / end</button>
+        </div>
+
+        <template x-if="customRangeModal.mode === 'rolling'">
+          <div>
+            <div class="cr-field">
+              <label class="cr-label">Show the last…</label>
+              <div class="cr-row">
+                <input class="cr-input" type="number" min="1" max="120"
+                       x-model.number="customRangeModal.rollingN">
+                <select class="cr-select" x-model="customRangeModal.rollingUnit">
+                  <option value="months">months</option>
+                  <option value="years">years</option>
+                </select>
+              </div>
+            </div>
+            <p style="font-size:0.73rem;color:var(--text-muted);margin:0;">
+              Relative to today — refreshes each time you open the page.
+            </p>
+          </div>
+        </template>
+
+        <template x-if="customRangeModal.mode === 'custom'">
+          <div>
+            <div class="cr-field">
+              <label class="cr-label">Start period</label>
+              <select class="cr-select" x-model="customRangeModal.startPeriodId">
+                <template x-for="p in [...periods].reverse()" :key="p.id">
+                  <option :value="p.id" x-text="p.option_label"></option>
+                </template>
+              </select>
+            </div>
+            <div class="cr-field">
+              <label class="cr-label">End period</label>
+              <select class="cr-select" x-model="customRangeModal.endPeriodId">
+                <template x-for="p in periods" :key="p.id">
+                  <option :value="p.id" x-text="p.option_label"></option>
+                </template>
+              </select>
+            </div>
+            <p style="font-size:0.73rem;color:var(--text-muted);margin:0;">
+              Includes all transactions in both the start and end periods.
+            </p>
+          </div>
+        </template>
+
+        <div class="cr-footer">
+          <button class="cr-btn-cancel" @click="customRangeModal.open = false">Cancel</button>
+          <button class="cr-btn-apply" @click="applyCustomRange()">Apply</button>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  {# ── Tab bar ── #}
+  <div class="analysis-tabs" role="tablist">
+    <button class="analysis-tab" :class="activeTab==='overview'?'active':''" @click="switchTab('overview')">Overview</button>
+    <button class="analysis-tab" :class="activeTab==='trends'?'active':''" @click="switchTab('trends')">Trends</button>
+    <button class="analysis-tab" :class="activeTab==='spending'?'active':''" @click="switchTab('spending')">Spending</button>
+    <button class="analysis-tab" :class="activeTab==='subscriptions'?'active':''" @click="switchTab('subscriptions')">Subscriptions</button>
+    <button class="analysis-tab" x-show="!customRange" :class="activeTab==='runway'?'active':''" @click="switchTab('runway')">Runway</button>
+  </div>
+
+  {# ================================================================
+     ANOMALY BANNER (shown on all tabs when anomalies exist)
+     ================================================================ #}
+  <template x-if="anomalies.length > 0">
+    <div class="anomaly-banner">
+      <div class="anomaly-banner-header" @click="anomaliesExpanded = !anomaliesExpanded" style="cursor:pointer;">
+        <div style="display:flex;align-items:center;gap:0.6rem;">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;color:#f59e0b;">
+            <path d="M8 1.5L14.5 13H1.5L8 1.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            <path d="M8 6v3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <circle cx="8" cy="11.5" r="0.75" fill="currentColor"/>
+          </svg>
+          <span class="anomaly-banner-title">
+            Income timing anomal<span x-text="anomalies.length === 1 ? 'y' : 'ies'"></span>
+            detected (<span x-text="anomalies.length"></span>)
+          </span>
+          <span class="anomaly-banner-sub">Early payments that may have skewed your period summaries</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" :style="anomaliesExpanded ? 'transform:rotate(180deg)' : ''" style="transition:transform 0.2s;color:var(--text-muted);flex-shrink:0;">
+          <path d="M2 4.5l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <div x-show="anomaliesExpanded" style="display:none;">
+        <template x-for="a in anomalies" :key="a.transaction_id">
+          <div class="anomaly-item">
+            <div class="anomaly-item-main">
+              <div class="anomaly-item-top">
+                <span class="anomaly-desc" x-text="a.description"></span>
+                <span class="anomaly-amount" x-text="fmt(a.amount)"></span>
+              </div>
+              <div class="anomaly-item-detail">
+                Arrived <span x-text="a.date"></span>
+                — <span x-text="a.days_into_period"></span> days into the <span x-text="a.actual_period_label"></span> period,
+                but normally arrives <span x-text="a.typical_days_min"></span>–<span x-text="a.typical_days_max"></span> days in.
+              </div>
+              <div class="anomaly-item-impact" x-show="a.missing_from_expected">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="flex-shrink:0;"><circle cx="6" cy="6" r="5" stroke="currentColor" stroke-width="1.2"/><path d="M6 3.5v3" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/><circle cx="6" cy="8.5" r="0.6" fill="currentColor"/></svg>
+                <span x-text="'Counted in ' + a.actual_period_label + ' instead of ' + a.expected_period_label + ' — skewing both periods'"></span>
+              </div>
+              <div class="anomaly-item-descs" x-show="a.all_descriptions.length > 1">
+                Also seen as:
+                <template x-for="d in a.all_descriptions.filter(d => d !== a.description)" :key="d">
+                  <span class="anomaly-desc-pill" x-text="d"></span>
+                </template>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:0.4rem;flex-shrink:0;">
+              <button class="anomaly-fix-btn" @click="fixAnomaly(a.transaction_id, a.expected_period_id, a.expected_period_label)" :title="'Move to ' + a.expected_period_label + ' period'">
+                Move to <span x-text="a.expected_period_label"></span>
+              </button>
+              <button class="anomaly-dismiss-btn" @click="dismissAnomaly(a.transaction_id)" title="Dismiss this anomaly">
+                Dismiss
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </template>
+
+  {# ================================================================
+     TAB: OVERVIEW
+     ================================================================ #}
+  <div x-show="activeTab==='overview'" style="display:none;">
+    <div x-show="tabs.overview.loading" class="tab-loading">
+      <div class="loading-spinner"></div> Loading overview…
+    </div>
+    <div x-show="tabs.overview.error && !tabs.overview.loading" class="tab-error" x-text="tabs.overview.error"></div>
+
+    <template x-if="tabs.overview.data">
+      <div>
+
+        {# KPI Cards #}
+        <div class="kpi-grid">
+          <div class="kpi-card kpi-card--green kpi-card--tippable" @mouseenter="kpiTip='income'" @mouseleave="kpiTip=null">
+            <div class="kpi-label">Income</div>
+            <div class="kpi-value amount-positive" x-text="fmt(tabs.overview.data.income)"></div>
+            <div class="kpi-delta" x-show="tabs.overview.data.prev_income != null">
+              <span :class="tabs.overview.data.income >= tabs.overview.data.prev_income ? 'delta-up' : 'delta-down'"
+                    x-text="delta(tabs.overview.data.income, tabs.overview.data.prev_income)"></span>
+              vs last period
+            </div>
+            <div class="kpi-sub">Primary income (salary / pay)</div>
+            <div class="kpi-sub privacy-num" x-show="tabs.overview.data.other_income > 0">
+              + <span x-text="fmt(tabs.overview.data.other_income)"></span> other income
+            </div>
+            <div class="kpi-tooltip" x-show="kpiTip==='income'" x-cloak>
+              <div class="kpi-tooltip-title">Primary income</div>
+              <template x-if="(tabs.overview.data.income_transactions || []).length === 0">
+                <div class="kpi-tooltip-empty">No keyword-matched income</div>
+              </template>
+              <template x-for="(tx, i) in (tabs.overview.data.income_transactions || [])" :key="i">
+                <div class="kpi-tooltip-row">
+                  <span class="kpi-tooltip-date" x-text="tx.date"></span>
+                  <span class="kpi-tooltip-desc" x-text="tx.description"></span>
+                  <span class="kpi-tooltip-amt amount-positive" x-text="fmt(tx.amount)"></span>
+                </div>
+              </template>
+              <template x-if="(tabs.overview.data.other_income_transactions || []).length > 0">
+                <div>
+                  <div class="kpi-tooltip-divider"></div>
+                  <div class="kpi-tooltip-title" style="margin-top:0.3rem">Other income</div>
+                  <template x-for="(tx, i) in (tabs.overview.data.other_income_transactions || [])" :key="i">
+                    <div class="kpi-tooltip-row">
+                      <span class="kpi-tooltip-date" x-text="tx.date"></span>
+                      <span class="kpi-tooltip-desc" x-text="tx.description"></span>
+                      <span class="kpi-tooltip-amt amount-positive" x-text="fmt(tx.amount)"></span>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div class="kpi-card kpi-card--red kpi-card--tippable" @mouseenter="kpiTip='spending'" @mouseleave="kpiTip=null">
+            <div class="kpi-label">Spending</div>
+            <div class="kpi-value amount-negative" x-text="fmt(-tabs.overview.data.outgoing)"></div>
+            <div class="kpi-delta" x-show="tabs.overview.data.prev_outgoing != null">
+              <span :class="Math.abs(tabs.overview.data.outgoing) <= Math.abs(tabs.overview.data.prev_outgoing) ? 'delta-up' : 'delta-down'"
+                    x-text="delta(Math.abs(tabs.overview.data.outgoing), Math.abs(tabs.overview.data.prev_outgoing))"></span>
+              vs last period
+            </div>
+            <div class="kpi-sub">Total outgoings this period</div>
+            <div class="kpi-tooltip" x-show="kpiTip==='spending'" x-cloak>
+              <div class="kpi-tooltip-title">By category</div>
+              <template x-for="(cat, i) in (tabs.overview.data.donut || [])" :key="i">
+                <div class="kpi-tooltip-row">
+                  <span class="kpi-tooltip-desc" x-text="cat.name"></span>
+                  <span class="kpi-tooltip-amt amount-negative" x-text="fmt(-cat.total)"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div class="kpi-card kpi-card--tippable" :class="tabs.overview.data.surplus >= 0 ? 'kpi-card--green' : 'kpi-card--red'" @mouseenter="kpiTip='surplus'" @mouseleave="kpiTip=null">
+            <div class="kpi-label">Surplus</div>
+            <div class="kpi-value" :class="tabs.overview.data.surplus >= 0 ? 'amount-positive' : 'amount-negative'"
+                 x-text="fmtSigned(tabs.overview.data.surplus)"></div>
+            <div class="kpi-delta" x-show="tabs.overview.data.prev_surplus != null">
+              <span :class="tabs.overview.data.surplus >= tabs.overview.data.prev_surplus ? 'delta-up' : 'delta-down'"
+                    x-text="delta(tabs.overview.data.surplus, tabs.overview.data.prev_surplus)"></span>
+              vs last period
+            </div>
+            <div class="kpi-sub">All income minus spending</div>
+            <div class="kpi-tooltip" x-show="kpiTip==='surplus'" x-cloak>
+              <div class="kpi-tooltip-title">Surplus breakdown</div>
+              <div class="kpi-tooltip-row">
+                <span class="kpi-tooltip-desc">Primary income</span>
+                <span class="kpi-tooltip-amt amount-positive" x-text="fmt(tabs.overview.data.income)"></span>
+              </div>
+              <template x-if="tabs.overview.data.other_income > 0">
+                <div class="kpi-tooltip-row">
+                  <span class="kpi-tooltip-desc">Other income</span>
+                  <span class="kpi-tooltip-amt amount-positive" x-text="fmt(tabs.overview.data.other_income)"></span>
+                </div>
+              </template>
+              <div class="kpi-tooltip-row">
+                <span class="kpi-tooltip-desc">Spending</span>
+                <span class="kpi-tooltip-amt amount-negative" x-text="fmt(tabs.overview.data.outgoing)"></span>
+              </div>
+              <div class="kpi-tooltip-divider"></div>
+              <div class="kpi-tooltip-row kpi-tooltip-row--total">
+                <span class="kpi-tooltip-desc">= Surplus</span>
+                <span :class="tabs.overview.data.surplus >= 0 ? 'kpi-tooltip-amt amount-positive' : 'kpi-tooltip-amt amount-negative'"
+                      x-text="fmtSigned(tabs.overview.data.surplus)"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="kpi-card" :class="tabs.overview.data.non_category_outgoing < -0.005 ? 'kpi-card--amber' : ''">
+            <div class="kpi-label">Uncategorized</div>
+            <div class="kpi-value" :class="tabs.overview.data.non_category_outgoing < -0.005 ? 'amount-negative' : 'amount-muted'"
+                 x-text="fmt(-tabs.overview.data.non_category_outgoing)"></div>
+            <template x-if="tabs.overview.data.non_category_outgoing < -0.005">
+              <a href="/transactions?uncategorized=1" class="kpi-sub" style="color:var(--emerald-500);font-weight:500;">Review transactions &rarr;</a>
+            </template>
+            <template x-if="!(tabs.overview.data.non_category_outgoing < -0.005)">
+              <div class="kpi-sub">All transactions categorized</div>
+            </template>
+          </div>
+        </div>
+
+        {# Subscriptions + Non-Subscription breakdown #}
+        <section class="breakdown-grid" aria-label="Spending breakdown">
+
+          <div class="card breakdown-card card-tippable" @mouseenter="kpiTip='subs'" @mouseleave="kpiTip=null">
+            <h2 class="card-title">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+              Subscriptions
+            </h2>
+            <div class="breakdown-row">
+              <span class="breakdown-label">Paid so far</span>
+              <span class="breakdown-value amount-negative privacy-num" x-text="fmt(-tabs.overview.data.subs_total)"></span>
+            </div>
+            <div class="breakdown-row">
+              <span class="breakdown-label">Still to pay</span>
+              <span class="breakdown-value privacy-num"
+                    :class="tabs.overview.data.remaining_subs < -0.005 ? 'amount-negative' : 'amount-muted'"
+                    x-text="fmt(Math.abs(tabs.overview.data.remaining_subs))"></span>
+            </div>
+            <template x-if="(-tabs.overview.data.subs_total + Math.abs(tabs.overview.data.remaining_subs)) > 0">
+              <div>
+                <div class="progress-bar" role="progressbar">
+                  <div class="progress-bar__fill progress-bar__fill--blue"
+                       :style="{ width: Math.round(-tabs.overview.data.subs_total / (-tabs.overview.data.subs_total + Math.abs(tabs.overview.data.remaining_subs)) * 100) + '%' }"></div>
+                </div>
+                <p class="progress-bar__label" x-text="Math.round(-tabs.overview.data.subs_total / (-tabs.overview.data.subs_total + Math.abs(tabs.overview.data.remaining_subs)) * 100) + '% paid'"></p>
+              </div>
+            </template>
+            <div class="kpi-tooltip" x-show="kpiTip==='subs'" x-cloak>
+              <div class="kpi-tooltip-title">Paid this period</div>
+              <template x-if="(tabs.overview.data.donut || []).filter(c => c.is_subscription).length === 0">
+                <div class="kpi-tooltip-empty">None paid yet</div>
+              </template>
+              <template x-for="(cat, i) in (tabs.overview.data.donut || []).filter(c => c.is_subscription)" :key="i">
+                <div class="kpi-tooltip-row">
+                  <span class="kpi-tooltip-desc" x-text="cat.name"></span>
+                  <span class="kpi-tooltip-amt amount-negative" x-text="fmt(-cat.total)"></span>
+                </div>
+              </template>
+              <template x-if="tabs.overview.data.remaining_subs < -0.005">
+                <div>
+                  <div class="kpi-tooltip-divider"></div>
+                  <div class="kpi-tooltip-row">
+                    <span class="kpi-tooltip-desc">Still expected</span>
+                    <span class="kpi-tooltip-amt amount-negative" x-text="fmt(tabs.overview.data.remaining_subs)"></span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div class="card breakdown-card card-tippable" @mouseenter="kpiTip='nonsub'" @mouseleave="kpiTip=null">
+            <h2 class="card-title">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+              Non-Subscription
+            </h2>
+            <div class="breakdown-row">
+              <span class="breakdown-label">Spent so far</span>
+              <span class="breakdown-value amount-negative privacy-num" x-text="fmt(-tabs.overview.data.discretionary_total)"></span>
+            </div>
+            <div class="breakdown-row">
+              <span class="breakdown-label">vs last period</span>
+              <span class="breakdown-value privacy-num"
+                    :class="tabs.overview.data.remaining_non_sub < -0.005 ? 'amount-negative' : 'amount-muted'"
+                    x-text="fmt(Math.abs(tabs.overview.data.remaining_non_sub))"></span>
+            </div>
+            <template x-if="tabs.overview.data.food_outgoing || tabs.overview.data.penny_outgoing">
+              <div class="breakdown-highlights">
+                <template x-if="tabs.overview.data.food_outgoing">
+                  <div class="highlight-chip">
+                    <span class="highlight-chip__label">Food</span>
+                    <span class="highlight-chip__value privacy-num" x-text="fmt(-tabs.overview.data.food_outgoing)"></span>
+                  </div>
+                </template>
+                <template x-if="tabs.overview.data.penny_outgoing">
+                  <div class="highlight-chip">
+                    <span class="highlight-chip__label">Penny</span>
+                    <span class="highlight-chip__value privacy-num" x-text="fmt(-tabs.overview.data.penny_outgoing)"></span>
+                  </div>
+                </template>
+              </div>
+            </template>
+            <div class="kpi-tooltip" x-show="kpiTip==='nonsub'" x-cloak>
+              <div class="kpi-tooltip-title">By category</div>
+              <template x-if="(tabs.overview.data.donut || []).filter(c => !c.is_subscription).length === 0 && !(tabs.overview.data.non_category_outgoing < -0.005)">
+                <div class="kpi-tooltip-empty">No non-subscription spending</div>
+              </template>
+              <template x-for="(cat, i) in (tabs.overview.data.donut || []).filter(c => !c.is_subscription)" :key="i">
+                <div class="kpi-tooltip-row">
+                  <span class="kpi-tooltip-desc" x-text="cat.name"></span>
+                  <span class="kpi-tooltip-amt amount-negative" x-text="fmt(-cat.total)"></span>
+                </div>
+              </template>
+              <template x-if="tabs.overview.data.non_category_outgoing < -0.005">
+                <div class="kpi-tooltip-row">
+                  <span class="kpi-tooltip-desc">Uncategorized</span>
+                  <span class="kpi-tooltip-amt amount-negative" x-text="fmt(tabs.overview.data.non_category_outgoing)"></span>
+                </div>
+              </template>
+            </div>
+          </div>
+
+        </section>
+
+        {# Donut + Quick Stats #}
+        <div class="overview-row">
+          <section class="card">
+            <div class="section-header">
+              <h2 class="card-title">Where Your Money Went
+                <span class="info-tip" data-tip="Spending broken down by category for this pay period. Hover a segment for details."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+              </h2>
+            </div>
+            <div class="donut-with-legend card-body">
+              <div class="donut-container">
+                <canvas id="donutChart" aria-label="Category spending donut chart" role="img"></canvas>
+              </div>
+              <div class="donut-legend" id="donutLegend"></div>
+            </div>
+          </section>
+
+          <section class="card">
+            <div class="section-header">
+              <h2 class="card-title">This Period
+                <span class="info-tip" data-tip="Key numbers for your current pay period: what's been spent on subscriptions vs day-to-day, how many transactions, and your remaining bank balance."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+              </h2>
+            </div>
+            <div class="card-body">
+            <div class="quick-stats-list">
+              <div class="quick-stat-row">
+                <span class="quick-stat-label">Subscriptions</span>
+                <span class="quick-stat-value amount-negative" x-text="fmt(-tabs.overview.data.subs_total)"></span>
+              </div>
+              <div class="quick-stat-row">
+                <span class="quick-stat-label">Discretionary</span>
+                <span class="quick-stat-value amount-negative" x-text="fmt(-tabs.overview.data.discretionary_total)"></span>
+              </div>
+              <div class="quick-stat-row">
+                <span class="quick-stat-label">Transactions</span>
+                <span class="quick-stat-value" x-text="tabs.overview.data.tx_count"></span>
+              </div>
+              <div class="quick-stat-row">
+                <span class="quick-stat-label">Remaining Balance</span>
+                <span class="quick-stat-value"
+                      :class="tabs.overview.data.remaining_balance >= 0 ? 'amount-positive' : 'amount-negative'"
+                      x-text="fmtSigned(tabs.overview.data.remaining_balance)"></span>
+              </div>
+            </div>
+            <div style="margin-top:1.25rem;">
+              <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-bottom:0.4rem;">
+                <span x-text="tabs.overview.data.days_elapsed + ' days elapsed'"></span>
+                <span x-text="tabs.overview.data.progress_pct + '%'"></span>
+              </div>
+              <div class="runway-progress">
+                <div class="runway-progress-fill" :style="{ width: tabs.overview.data.progress_pct + '%' }"></div>
+              </div>
+              <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.35rem;" x-text="tabs.overview.data.days_remaining + ' days until payday'"></div>
+            </div>
+            </div>{# /card-body #}
+          </section>
+        </div>
+
+        {# Coming Up + Recent Transactions #}
+        <div class="breakdown-grid breakdown-grid--thirds">
+
+          <template x-if="(tabs.overview.data.upcoming_subscriptions || []).length > 0">
+            <section class="card" aria-label="Upcoming subscriptions">
+              <div class="section-header">
+                <h2 class="card-title">Coming Up</h2>
+                <span class="section-header__meta">Next 7 days</span>
+              </div>
+              <div class="coming-up-list">
+                <template x-for="(sub, i) in tabs.overview.data.upcoming_subscriptions" :key="i">
+                  <div class="coming-up-row">
+                    <div class="coming-up-icon" :class="sub.days_until === 0 ? 'coming-up-icon--today' : sub.days_until === 1 ? 'coming-up-icon--soon' : ''">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    </div>
+                    <div class="coming-up-info">
+                      <span class="coming-up-name" x-text="sub.display_name"></span>
+                      <span class="coming-up-period" x-text="sub.subscription_period.charAt(0).toUpperCase() + sub.subscription_period.slice(1)"></span>
+                    </div>
+                    <div class="coming-up-right">
+                      <span class="coming-up-amount amount-negative amount-mono privacy-num" x-text="fmt(sub.latest_amount)"></span>
+                      <span class="coming-up-due"
+                            :class="sub.days_until === 0 ? 'coming-up-due--today' : sub.days_until === 1 ? 'coming-up-due--soon' : ''"
+                            x-text="sub.due_label"></span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </section>
+          </template>
+
+          <section class="card" aria-label="Recent transactions">
+            <div class="section-header">
+              <h2 class="card-title">Recent Transactions</h2>
+              <a href="/transactions" class="section-header__link">View all &rarr;</a>
+            </div>
+            <template x-if="(tabs.overview.data.recent_transactions || []).length > 0">
+              <div class="table-wrapper">
+                <table class="table" aria-label="Recent transactions">
+                  <thead>
+                    <tr>
+                      <th scope="col">Date</th>
+                      <th scope="col">Description</th>
+                      <th scope="col" class="text-right">Amount</th>
+                      <th scope="col">Category</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="(tx, i) in tabs.overview.data.recent_transactions" :key="i">
+                      <tr class="table-row">
+                        <td class="table-cell table-cell--date"><time x-text="tx.date"></time></td>
+                        <td class="table-cell table-cell--description"><span class="tx-description" x-text="tx.description" :title="tx.description"></span></td>
+                        <td class="table-cell table-cell--amount text-right">
+                          <span class="amount-mono privacy-num" :class="tx.amount >= 0 ? 'amount-positive' : 'amount-negative'" x-text="fmt(tx.amount)"></span>
+                        </td>
+                        <td class="table-cell table-cell--category">
+                          <template x-if="tx.category_name">
+                            <span class="badge badge--category" x-text="tx.category_name"></span>
+                          </template>
+                          <template x-if="!tx.category_name">
+                            <span class="badge badge--uncategorized">Uncategorized</span>
+                          </template>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+            <template x-if="(tabs.overview.data.recent_transactions || []).length === 0">
+              <p class="no-data-message">No transactions to display.</p>
+            </template>
+          </section>
+
+        </div>
+
+      </div>
+    </template>
+  </div>
+
+  {# ================================================================
+     TAB: SPENDING
+     ================================================================ #}
+  <div x-show="activeTab==='spending'" style="display:none;">
+    <div x-show="tabs.spending.loading" class="tab-loading">
+      <div class="loading-spinner"></div> Loading breakdown…
+    </div>
+    <div x-show="tabs.spending.error && !tabs.spending.loading" class="tab-error" x-text="tabs.spending.error"></div>
+
+    <template x-if="tabs.spending.data">
+      <div>
+
+        {# Subs vs Discretionary bar #}
+        <section class="card" style="margin-bottom:1rem;">
+          <div class="section-header">
+            <h2 class="card-title">Subscriptions vs Discretionary
+              <span class="info-tip" data-tip="How your spending splits between fixed recurring subscriptions (purple) and variable day-to-day purchases (gold)."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+            </h2>
+          </div>
+          <div class="card-body" style="padding-top:0.5rem;">
+            <div class="split-bar">
+              <div class="split-bar-a"
+                   :style="{ width: (tabs.spending.data.subs_total / (tabs.spending.data.subs_total + tabs.spending.data.discretionary_total + 0.001) * 100) + '%' }">
+              </div>
+            </div>
+            <div class="split-bar-labels">
+              <span style="color:#a5b4fc;">Subs <strong class="privacy-num" x-text="fmt(-tabs.spending.data.subs_total)"></strong></span>
+              <span style="color:#fbbf24;">Discretionary <strong class="privacy-num" x-text="fmt(-tabs.spending.data.discretionary_total)"></strong></span>
+            </div>
+          </div>
+        </section>
+
+        {# Category Breakdown + Tags side by side #}
+        <div style="display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-start;">
+
+        <section class="card" style="flex:1 1 300px;min-width:0;">
+          <div class="section-header">
+            <h2 class="card-title">Category Breakdown
+              <span class="info-tip" data-tip="All spending grouped by category. Click a parent row to expand its subcategories. % shows share of total spending."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+            </h2>
+            <span class="badge privacy-num" x-text="fmt(tabs.spending.data.total_outgoing) + ' total'"></span>
+          </div>
+          <div class="table-wrapper">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th class="text-right">Amount</th>
+                  <th class="text-right" style="width:4rem;white-space:nowrap;">%</th>
+                  <th class="text-right" style="width:4rem;">Txns</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template x-for="row in getFlatCategories(tabs.spending.data.hierarchy, expandedCats)"
+                          :key="row._key">
+                  <tr class="table-row"
+                      :class="row._type === 'parent' ? 'parent-row' : 'child-row'"
+                      @click="row._type === 'parent' && row.children && row.children.length ? toggleCat(row.id ?? row.name) : null"
+                      :style="{ cursor: row._type === 'parent' && row.children && row.children.length ? 'pointer' : 'default' }">
+                    <td class="table-cell" :style="{ paddingLeft: row._type === 'child' ? '2.5rem' : undefined }">
+                      <span style="display:flex;align-items:center;gap:0.5rem;">
+                        <span x-show="row._type === 'parent' && row.children && row.children.length"
+                              style="font-size:0.65rem;color:var(--text-muted);width:0.8rem;flex-shrink:0;"
+                              x-text="expandedCats[row.id ?? row.name] ? '▼' : '▶'"></span>
+                        <span x-show="!(row._type === 'parent' && row.children && row.children.length)"
+                              style="display:inline-block;width:0.8rem;flex-shrink:0;"></span>
+                        <span :class="'badge badge--cat-colored' + (row.color_name ? ' cat-color-' + row.color_name : '')" x-text="row.name"></span>
+                        <span x-show="row.is_subscription" class="sub-badge">sub</span>
+                      </span>
+                    </td>
+                    <td class="table-cell text-right amount-negative"><span class="amount-mono" x-text="fmt(-row.total)"></span></td>
+                    <td class="table-cell text-right" style="color:var(--text-muted);font-size:0.8rem;white-space:nowrap;" x-text="row.pct + '%'"></td>
+                    <td class="table-cell text-right" style="color:var(--text-muted);font-size:0.8rem;" x-text="row.tx_count"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {# Tags #}
+        <template x-if="tabs.spending.data.tags && tabs.spending.data.tags.length">
+          <section class="card" style="flex:1 1 300px;min-width:0;">
+            <div class="section-header">
+              <h2 class="card-title">By Tag
+                <span class="info-tip" data-tip="Spending totals for custom tags applied to your transactions. Tags let you track spending across categories (e.g. 'kids', 'holiday')."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+              </h2>
+            </div>
+            <div class="table-wrapper">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Tag</th>
+                    <th class="text-right">Amount</th>
+                    <th class="text-right">Txns</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="tag in tabs.spending.data.tags" :key="tag.tag">
+                    <tr class="table-row">
+                      <td class="table-cell"><span class="tag-badge" x-text="tag.tag"></span></td>
+                      <td class="table-cell text-right amount-negative amount-mono" x-text="fmt(-tag.total)"></td>
+                      <td class="table-cell text-right" style="color:var(--text-muted);" x-text="tag.tx_count"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </template>
+
+        </div>{# end side-by-side row #}
+
+        {# Spending by Category chart #}
+        <section class="card chart-card" style="margin-top:1rem;" aria-label="Spending by category">
+          <h2 class="card-title">Spending by Category</h2>
+          <div class="chart-wrapper" :style="{ height: Math.max(200, tabs.spending.data.hierarchy.length * 36) + 'px' }">
+            <canvas id="catSpendingChart" aria-label="Horizontal bar chart showing spending per category" role="img"></canvas>
+          </div>
+        </section>
+
+      </div>
+    </template>
+  </div>
+
+  {# ================================================================
+     TAB: SUBSCRIPTIONS
+     ================================================================ #}
+  <div x-show="activeTab==='subscriptions'" style="display:none;">
+    <div x-show="tabs.subscriptions.loading" class="tab-loading">
+      <div class="loading-spinner"></div> Loading subscriptions…
+    </div>
+    <div x-show="tabs.subscriptions.error && !tabs.subscriptions.loading" class="tab-error" x-text="tabs.subscriptions.error"></div>
+
+    <template x-if="tabs.subscriptions.data">
+      <div>
+
+        <div class="kpi-grid kpi-grid--3">
+          <div class="kpi-card">
+            <div class="kpi-label">Monthly Cost</div>
+            <div class="kpi-value amount-negative" x-text="fmt(-tabs.subscriptions.data.monthly_total)"></div>
+            <div class="kpi-sub">Normalised to monthly (weekly ×4.33, yearly ÷12)</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Annual Cost</div>
+            <div class="kpi-value amount-negative" x-text="fmt(-tabs.subscriptions.data.annual_total)"></div>
+            <div class="kpi-sub">Monthly cost × 12</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Active Subscriptions</div>
+            <div class="kpi-value" x-text="tabs.subscriptions.data.active_count"></div>
+            <div class="kpi-sub">Rules flagged as subscriptions</div>
+          </div>
+        </div>
+
+        <template x-if="tabs.subscriptions.data.upcoming && tabs.subscriptions.data.upcoming.length">
+          <section class="card" style="margin-bottom:1rem;">
+            <div class="section-header">
+              <h2 class="card-title">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                     stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                </svg>
+                Upcoming This Period
+                <span class="info-tip" data-tip="Subscriptions expected but not yet charged in this pay period, based on your subscription rules."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+              </h2>
+            </div>
+            <div class="table-wrapper">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Subscription</th>
+                    <th class="text-right">Expected</th>
+                    <th class="text-right">Frequency</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="sub in tabs.subscriptions.data.upcoming" :key="sub.id">
+                    <tr class="table-row">
+                      <td class="table-cell">
+                        <span x-text="sub.display_name"></span>
+                        <template x-if="sub.tags && sub.tags.length">
+                          <span style="margin-left:0.5rem;">
+                            <template x-for="t in sub.tags" :key="t">
+                              <span class="tag-badge" x-text="t"></span>
+                            </template>
+                          </span>
+                        </template>
+                      </td>
+                      <td class="table-cell text-right amount-negative amount-mono" x-text="fmt(sub.latest_amount || 0)"></td>
+                      <td class="table-cell text-right" style="color:var(--text-muted);font-size:0.8rem;" x-text="sub.subscription_period"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </template>
+
+        <section class="card">
+          <div class="section-header">
+            <h2 class="card-title">All Subscriptions
+            <span class="info-tip" data-tip="Every active subscription rule grouped by billing frequency. 'Monthly' shows the normalised monthly equivalent cost. Paid/Pending shows whether it has been charged this period."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+          </h2>
+          </div>
+
+          <template x-if="tabs.subscriptions.data.groups.monthly && tabs.subscriptions.data.groups.monthly.length">
+            <div>
+              <div class="sub-group-header">Monthly (<span x-text="tabs.subscriptions.data.groups.monthly.length"></span>)</div>
+              <div class="table-wrapper">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th @click="subSortBy('name')"     style="cursor:pointer;user-select:none;">Name <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('name')"></span></th>
+                      <th @click="subSortBy('amount')"   style="cursor:pointer;user-select:none;" class="text-right">Amount <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('amount')"></span></th>
+                      <th @click="subSortBy('monthly')"  style="cursor:pointer;user-select:none;" class="text-right">Monthly <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('monthly')"></span></th>
+                      <th @click="subSortBy('date')"     style="cursor:pointer;user-select:none;" class="text-right">Date <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('date')"></span></th>
+                      <th @click="subSortBy('status')"   style="cursor:pointer;user-select:none;" class="text-right">Status <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('status')"></span></th>
+                      <th @click="subSortBy('activity')" style="cursor:pointer;user-select:none;" class="text-right">Activity <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('activity')"></span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="sub in subSortedSubs(tabs.subscriptions.data.groups.monthly)" :key="sub.id">
+                      <tr class="table-row">
+                        <td class="table-cell">
+                          <span :class="'badge badge--cat-colored' + (sub.color_name ? ' cat-color-' + sub.color_name : '')" x-text="sub.display_name"></span>
+                          <template x-if="sub.tags && sub.tags.length">
+                            <span style="margin-left:0.4rem;"><template x-for="t in sub.tags" :key="t"><span class="tag-badge" x-text="t"></span></template></span>
+                          </template>
+                        </td>
+                        <td class="table-cell text-right amount-negative amount-mono" x-text="fmt(sub.latest_amount || 0)"></td>
+                        <td class="table-cell text-right" style="color:var(--text-muted);font-size:0.8rem;" x-text="fmt(-sub.monthly_equiv)"></td>
+                        <td class="table-cell text-right" style="font-size:0.8rem;" :style="sub.period_date_predicted ? 'color:var(--text-muted);' : ''" x-text="fmtSubDate(sub.period_date, sub.period_date_predicted)"></td>
+                        <td class="table-cell text-right">
+                          <span x-show="sub.is_inactive" class="status-badge" style="background:rgba(156,163,175,0.08);color:var(--text-muted);">N/A</span>
+                          <span x-show="!sub.is_inactive" :class="sub.paid_this_period > 0 ? 'status-badge paid' : 'status-badge pending'"
+                                x-text="sub.paid_this_period > 0 ? '✓ Paid' : '○ Pending'"></span>
+                        </td>
+                        <td class="table-cell text-right">
+                          <template x-if="sub.is_inactive">
+                            <span class="status-badge inactive" :title="sub.latest_date ? 'Last transaction ' + fmtSubDate(sub.latest_date, false, true) : 'No transactions found'">
+                              <span x-text="sub.latest_date ? 'Last seen ' + fmtSubDate(sub.latest_date, false, true) : 'Never seen'"></span>
+                            </span>
+                          </template>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+          <template x-if="tabs.subscriptions.data.groups.yearly && tabs.subscriptions.data.groups.yearly.length">
+            <div>
+              <div class="sub-group-header">Yearly (<span x-text="tabs.subscriptions.data.groups.yearly.length"></span>)</div>
+              <div class="table-wrapper">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th @click="subSortBy('name')"     style="cursor:pointer;user-select:none;">Name <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('name')"></span></th>
+                      <th @click="subSortBy('amount')"   style="cursor:pointer;user-select:none;" class="text-right">Amount <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('amount')"></span></th>
+                      <th @click="subSortBy('monthly')"  style="cursor:pointer;user-select:none;" class="text-right">Monthly Equiv <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('monthly')"></span></th>
+                      <th @click="subSortBy('date')"     style="cursor:pointer;user-select:none;" class="text-right">Date <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('date')"></span></th>
+                      <th @click="subSortBy('status')"   style="cursor:pointer;user-select:none;" class="text-right">Status <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('status')"></span></th>
+                      <th @click="subSortBy('activity')" style="cursor:pointer;user-select:none;" class="text-right">Activity <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('activity')"></span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="sub in subSortedSubs(tabs.subscriptions.data.groups.yearly)" :key="sub.id">
+                      <tr class="table-row">
+                        <td class="table-cell"><span :class="'badge badge--cat-colored' + (sub.color_name ? ' cat-color-' + sub.color_name : '')" x-text="sub.display_name"></span></td>
+                        <td class="table-cell text-right amount-negative amount-mono" x-text="fmt(sub.latest_amount || 0)"></td>
+                        <td class="table-cell text-right" style="color:var(--text-muted);font-size:0.8rem;" x-text="fmt(-sub.monthly_equiv)"></td>
+                        <td class="table-cell text-right" style="font-size:0.8rem;" :style="sub.period_date_predicted ? 'color:var(--text-muted);' : ''" x-text="fmtSubDate(sub.period_date, sub.period_date_predicted)"></td>
+                        <td class="table-cell text-right">
+                          <span x-show="sub.is_inactive" class="status-badge" style="background:rgba(156,163,175,0.08);color:var(--text-muted);">N/A</span>
+                          <span x-show="!sub.is_inactive" :class="sub.paid_this_period > 0 ? 'status-badge paid' : 'status-badge pending'"
+                                x-text="sub.paid_this_period > 0 ? '✓ Paid' : '○ Pending'"></span>
+                        </td>
+                        <td class="table-cell text-right">
+                          <template x-if="sub.is_inactive">
+                            <span class="status-badge inactive" :title="sub.latest_date ? 'Last transaction ' + fmtSubDate(sub.latest_date, false, true) : 'No transactions found'">
+                              <span x-text="sub.latest_date ? 'Last seen ' + fmtSubDate(sub.latest_date, false, true) : 'Never seen'"></span>
+                            </span>
+                          </template>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+          <template x-if="tabs.subscriptions.data.groups.weekly && tabs.subscriptions.data.groups.weekly.length">
+            <div>
+              <div class="sub-group-header">Weekly (<span x-text="tabs.subscriptions.data.groups.weekly.length"></span>)</div>
+              <div class="table-wrapper">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th @click="subSortBy('name')"     style="cursor:pointer;user-select:none;">Name <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('name')"></span></th>
+                      <th @click="subSortBy('amount')"   style="cursor:pointer;user-select:none;" class="text-right">Amount <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('amount')"></span></th>
+                      <th @click="subSortBy('monthly')"  style="cursor:pointer;user-select:none;" class="text-right">Monthly Equiv <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('monthly')"></span></th>
+                      <th @click="subSortBy('date')"     style="cursor:pointer;user-select:none;" class="text-right">Date <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('date')"></span></th>
+                      <th @click="subSortBy('status')"   style="cursor:pointer;user-select:none;" class="text-right">Status <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('status')"></span></th>
+                      <th @click="subSortBy('activity')" style="cursor:pointer;user-select:none;" class="text-right">Activity <span style="opacity:0.45;font-size:0.7rem;" x-text="subSortIcon('activity')"></span></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <template x-for="sub in subSortedSubs(tabs.subscriptions.data.groups.weekly)" :key="sub.id">
+                      <tr class="table-row">
+                        <td class="table-cell"><span :class="'badge badge--cat-colored' + (sub.color_name ? ' cat-color-' + sub.color_name : '')" x-text="sub.display_name"></span></td>
+                        <td class="table-cell text-right amount-negative amount-mono" x-text="fmt(sub.latest_amount || 0)"></td>
+                        <td class="table-cell text-right" style="color:var(--text-muted);font-size:0.8rem;" x-text="fmt(-sub.monthly_equiv)"></td>
+                        <td class="table-cell text-right" style="font-size:0.8rem;" :style="sub.period_date_predicted ? 'color:var(--text-muted);' : ''" x-text="fmtSubDate(sub.period_date, sub.period_date_predicted)"></td>
+                        <td class="table-cell text-right">
+                          <span x-show="sub.is_inactive" class="status-badge" style="background:rgba(156,163,175,0.08);color:var(--text-muted);">N/A</span>
+                          <span x-show="!sub.is_inactive" :class="sub.paid_this_period > 0 ? 'status-badge paid' : 'status-badge pending'"
+                                x-text="sub.paid_this_period > 0 ? '✓ Paid' : '○ Pending'"></span>
+                        </td>
+                        <td class="table-cell text-right">
+                          <template x-if="sub.is_inactive">
+                            <span class="status-badge inactive" :title="sub.latest_date ? 'Last transaction ' + fmtSubDate(sub.latest_date, false, true) : 'No transactions found'">
+                              <span x-text="sub.latest_date ? 'Last seen ' + fmtSubDate(sub.latest_date, false, true) : 'Never seen'"></span>
+                            </span>
+                          </template>
+                        </td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+        </section>
+      </div>
+    </template>
+  </div>
+
+  {# ================================================================
+     TAB: TRENDS
+     ================================================================ #}
+  <div x-show="activeTab==='trends'" style="display:none;">
+    <div x-show="tabs.trends.loading" class="tab-loading">
+      <div class="loading-spinner"></div> Loading trends…
+    </div>
+    <div x-show="tabs.trends.error && !tabs.trends.loading" class="tab-error" x-text="tabs.trends.error"></div>
+
+    <div class="trends-controls">
+      <template x-if="!customRange">
+        <div style="display:flex;align-items:center;gap:0.75rem;">
+          <span style="font-size:0.8rem;color:var(--text-muted);">Show last:</span>
+          <div class="btn-group">
+            <button class="btn btn-sm" :class="trendsRange===6?'btn-primary':'btn-ghost'" @click="setTrendsRange(6)">6 periods</button>
+            <button class="btn btn-sm" :class="trendsRange===12?'btn-primary':'btn-ghost'" @click="setTrendsRange(12)">12 periods</button>
+            <button class="btn btn-sm" :class="trendsRange===24?'btn-primary':'btn-ghost'" @click="setTrendsRange(24)">24 periods</button>
+          </div>
+          <span style="font-size:0.8rem;color:var(--text-muted);">up to <strong x-text="selectedPeriodDateRange"></strong></span>
+        </div>
+      </template>
+      <template x-if="customRange">
+        <div style="display:flex;align-items:center;gap:0.5rem;">
+          <span style="font-size:0.8rem;color:var(--text-muted);">Showing all periods within</span>
+          <span style="font-size:0.8rem;font-weight:600;color:var(--text-primary);" x-text="customRange.label"></span>
+          <span style="font-size:0.8rem;color:var(--text-muted);" x-text="'(' + selectedPeriodDateRange + ')'"></span>
+        </div>
+      </template>
+    </div>
+
+    <template x-if="tabs.trends.data">
+      <div>
+        <div class="chart-section-grid">
+
+          <section class="card chart-card" style="grid-column:1/-1;">
+            <div class="section-header" style="flex-wrap:wrap;gap:0.5rem;">
+              <h2 class="card-title">Category Spending Trend
+                <span class="info-tip" data-tip="Click a category to drill into sub-categories. Select multiple categories to compare them. Use Stacked or Grouped view when 5 or fewer are selected."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+              </h2>
+              <div id="catTrendControls" style="display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-left:auto;"></div>
+            </div>
+            <div style="position:relative;height:280px;"><canvas id="catTrendChart"></canvas></div>
+            <div id="catTrendLegend" style="display:none;flex-wrap:wrap;gap:0.375rem;padding:0.625rem 1rem 0.5rem;"></div>
+          </section>
+
+          <section class="card chart-card">
+            <div class="section-header">
+              <h2 class="card-title">Income vs Outgoing
+                <span class="info-tip" data-tip="Green line = total income received each period. Red line = total spending. When red is above green you overspent that period."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+              </h2>
+              <div style="display:flex;gap:0.75rem;font-size:0.75rem;color:var(--text-muted);">
+                <span><span style="display:inline-block;width:12px;height:2px;background:#10b981;vertical-align:middle;margin-right:3px;border-radius:1px;"></span>Income</span>
+                <span><span style="display:inline-block;width:12px;height:2px;background:#f43f5e;vertical-align:middle;margin-right:3px;border-radius:1px;"></span>Outgoing</span>
+              </div>
+            </div>
+            <div style="position:relative;height:220px;"><canvas id="incomeOutChart"></canvas></div>
+          </section>
+
+          <section class="card chart-card">
+            <div class="section-header">
+              <h2 class="card-title">Surplus Trend
+                <span class="info-tip" data-tip="Income minus spending each period. Green bars = money left over. Red bars = overspent. A consistent positive surplus means you're saving."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+              </h2>
+            </div>
+            <div style="position:relative;height:220px;"><canvas id="surplusChart"></canvas></div>
+          </section>
+
+          <section class="card chart-card" style="grid-column:1/-1;">
+            <div class="section-header">
+              <h2 class="card-title">Subscriptions vs Discretionary
+                <span class="info-tip" data-tip="How fixed subscription costs (purple) compare to variable day-to-day spending (gold) across periods. Widening gap = discretionary spend increasing."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+              </h2>
+              <div style="display:flex;gap:0.75rem;font-size:0.75rem;color:var(--text-muted);">
+                <span><span style="display:inline-block;width:12px;height:2px;background:#6366f1;vertical-align:middle;margin-right:3px;border-radius:1px;"></span>Subscriptions</span>
+                <span><span style="display:inline-block;width:12px;height:2px;background:#f59e0b;vertical-align:middle;margin-right:3px;border-radius:1px;"></span>Discretionary</span>
+              </div>
+            </div>
+            <div style="position:relative;height:220px;"><canvas id="subDiscChart"></canvas></div>
+          </section>
+
+        </div>
+
+        <template x-if="tabs.trends.forecast && tabs.trends.forecast.months && tabs.trends.forecast.months.length">
+          <section class="card" style="margin-top:1rem;">
+            <div class="section-header">
+              <h2 class="card-title">3-Month Forecast
+                <span class="info-tip" data-tip="Forward projection based on your known subscription commitments plus your average historical discretionary spend per period. Not a guarantee — actual income may vary."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+              </h2>
+              <span style="font-size:0.75rem;color:var(--text-muted);">Based on subscriptions + historical averages</span>
+            </div>
+            <div class="table-wrapper">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Month</th>
+                    <th class="text-right">Subscriptions</th>
+                    <th class="text-right">Discretionary</th>
+                    <th class="text-right">Total Spending</th>
+                    <th class="text-right">Est. Income</th>
+                    <th class="text-right">Est. Surplus</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="m in tabs.trends.forecast.months" :key="m.label">
+                    <tr class="table-row">
+                      <td class="table-cell" style="font-weight:500;" x-text="m.label"></td>
+                      <td class="table-cell text-right amount-negative amount-mono" x-text="fmt(-m.predicted_subs)"></td>
+                      <td class="table-cell text-right amount-negative amount-mono" x-text="fmt(-m.predicted_discretionary)"></td>
+                      <td class="table-cell text-right amount-negative amount-mono" x-text="fmt(-m.predicted_total)"></td>
+                      <td class="table-cell text-right amount-positive amount-mono" x-text="fmt(m.predicted_income)"></td>
+                      <td class="table-cell text-right amount-mono"
+                          :class="m.predicted_surplus >= 0 ? 'amount-positive' : 'amount-negative'"
+                          x-text="fmtSigned(m.predicted_surplus)"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </template>
+
+      </div>
+    </template>
+  </div>
+
+  {# ================================================================
+     TAB: RUNWAY
+     ================================================================ #}
+  <div x-show="activeTab==='runway'" style="display:none;">
+    <div x-show="tabs.runway.loading" class="tab-loading">
+      <div class="loading-spinner"></div> Loading runway…
+    </div>
+    <div x-show="tabs.runway.error && !tabs.runway.loading" class="tab-error" x-text="tabs.runway.error"></div>
+
+    <template x-if="tabs.runway.data">
+      <div>
+
+        <div class="card runway-header">
+          <div class="runway-top">
+            <div class="runway-countdown-block">
+              <span class="runway-big-num" x-text="tabs.runway.data.remaining"></span>
+              <span class="runway-big-label">days until payday</span>
+            </div>
+            <div class="runway-bal-block">
+              <span style="font-size:0.75rem;color:var(--text-muted);">Remaining balance</span>
+              <span class="runway-bal-val privacy-num"
+                    :class="tabs.runway.data.remaining_balance >= 0 ? 'amount-positive' : 'amount-negative'"
+                    x-text="fmtSigned(tabs.runway.data.remaining_balance)"></span>
+            </div>
+          </div>
+          <div style="margin-top:1rem;">
+            <div style="display:flex;justify-content:space-between;font-size:0.75rem;color:var(--text-muted);margin-bottom:0.4rem;">
+              <span x-text="tabs.runway.data.elapsed + ' days elapsed'"></span>
+              <span x-text="tabs.runway.data.progress_pct + '%'"></span>
+            </div>
+            <div class="runway-progress">
+              <div class="runway-progress-fill" :style="{ width: tabs.runway.data.progress_pct + '%' }"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="runway-body-grid">
+
+          <section class="card">
+            <div class="section-header">
+              <h2 class="card-title">Where You Stand
+                <span class="info-tip" data-tip="A waterfall showing exactly where your money has gone. The top section is actuals; the bottom projects what's still expected to leave your account before payday."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+              </h2>
+            </div>
+            <div class="waterfall card-body">
+              <div class="wf-row">
+                <span>Income received</span>
+                <span class="amount-positive amount-mono" x-text="fmt(tabs.runway.data.income_so_far)"></span>
+              </div>
+              <div class="wf-row wf-indent">
+                <span>Subscriptions paid</span>
+                <span class="amount-negative amount-mono" x-text="fmt(tabs.runway.data.subs_paid)"></span>
+              </div>
+              <div class="wf-row wf-indent">
+                <span>Discretionary spent</span>
+                <span class="amount-negative amount-mono" x-text="fmt(tabs.runway.data.disc_spent)"></span>
+              </div>
+              <div class="wf-row wf-total">
+                <strong>Current remaining</strong>
+                <strong class="amount-mono"
+                        :class="tabs.runway.data.remaining_balance >= 0 ? 'amount-positive' : 'amount-negative'"
+                        x-text="fmtSigned(tabs.runway.data.remaining_balance)"></strong>
+              </div>
+
+              <div class="wf-section-label">Expected remaining this period</div>
+
+              <div class="wf-row wf-indent">
+                <span>Subscriptions due</span>
+                <span class="amount-negative amount-mono" x-text="fmt(tabs.runway.data.subs_remaining)"></span>
+              </div>
+              <div class="wf-row wf-indent">
+                <span>Est. discretionary
+                  <span style="font-size:0.7rem;color:var(--text-muted);"
+                        x-text="'(avg × ' + tabs.runway.data.remaining + 'd)'"></span>
+                </span>
+                <span class="amount-negative amount-mono" x-text="fmt(tabs.runway.data.est_remaining_disc)"></span>
+              </div>
+              <div class="wf-row wf-total">
+                <strong>Projected end balance</strong>
+                <strong class="amount-mono"
+                        :class="tabs.runway.data.projected_end >= 0 ? 'amount-positive' : 'amount-negative'"
+                        x-text="fmtSigned(tabs.runway.data.projected_end)"></strong>
+              </div>
+            </div>
+          </section>
+
+          <div>
+            <section class="card" style="margin-bottom:1rem;">
+              <div class="section-header">
+                <h2 class="card-title">Daily Allowance
+                  <span class="info-tip tip-down" data-tip="How much you can comfortably spend per day for the rest of this period, after deducting subscriptions still due. Go over this and you risk running short before payday."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+                </h2>
+              </div>
+              <div class="card-body" style="text-align:center;padding-top:1.5rem;">
+                <div class="privacy-num" style="font-size:2.25rem;font-weight:700;"
+                     :class="tabs.runway.data.daily_allowance >= 0 ? 'amount-positive' : 'amount-negative'"
+                     x-text="fmt(tabs.runway.data.daily_allowance)"></div>
+                <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.5rem;">per day for
+                  <span x-text="tabs.runway.data.remaining"></span> days
+                </div>
+                <div style="font-size:0.7rem;color:var(--text-muted);margin-top:0.2rem;">after expected subscriptions</div>
+              </div>
+            </section>
+
+            <section class="card">
+              <div class="section-header">
+                <h2 class="card-title">Subscription Checklist
+                  <span class="info-tip tip-down" data-tip="Subscriptions expected this pay period. ✓ = already paid (transaction found). ○ = not yet charged — money still to leave your account."><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></span>
+                </h2>
+              </div>
+              <div class="checklist card-body">
+                <template x-for="sub in (tabs.runway.data.checklist || []).filter(s => s.expected)"
+                          :key="(sub.id ?? '') + sub.display_name">
+                  <div class="checklist-row" :class="sub.paid ? 'cl-paid' : 'cl-pending'">
+                    <span class="cl-icon" x-text="sub.paid ? '✓' : '○'"></span>
+                    <span class="cl-name" x-text="sub.display_name"></span>
+                    <span class="cl-amount amount-mono"
+                          x-text="sub.latest_amount ? fmt(sub.latest_amount) : '—'"></span>
+                  </div>
+                </template>
+              </div>
+            </section>
+          </div>
+
+        </div>
+      </div>
+    </template>
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}
+
+
+{% block scripts %}
+{{ super() if super is defined else '' }}
+
+<style>
+  /* Allow tooltips to escape card overflow */
+  .card { overflow: visible; }
+
+  /* ── Info tooltips ───────────────────────────────────── */
+  .info-tip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: help;
+    margin-left: 0.35rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .info-tip { text-transform: none; letter-spacing: normal; }
+  .info-tip svg { display: block; opacity: 0.55; transition: opacity 0.15s; }
+  .info-tip:hover svg { opacity: 1; }
+  .info-tip::before {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 7px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-elevated, #1e2235);
+    border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
+    border-radius: 7px;
+    padding: 0.45rem 0.65rem;
+    font-size: 0.72rem;
+    color: var(--text-secondary, #9ca3af);
+    line-height: 1.45;
+    white-space: normal;
+    width: max-content;
+    max-width: 240px;
+    z-index: 200;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+    font-weight: 400;
+    text-align: left;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  }
+  .info-tip::after {
+    content: '';
+    position: absolute;
+    bottom: calc(100% + 2px);
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: var(--border-subtle, rgba(255,255,255,0.1));
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .info-tip:hover::before,
+  .info-tip:hover::after { opacity: 1; }
+  /* Flip tooltip downward when near top of viewport */
+  .info-tip.tip-down::before {
+    bottom: auto;
+    top: calc(100% + 7px);
+  }
+  .info-tip.tip-down::after {
+    bottom: auto;
+    top: calc(100% + 2px);
+    border-top-color: transparent;
+    border-bottom-color: var(--border-subtle, rgba(255,255,255,0.1));
+  }
+
+  /* ── Tab bar ─────────────────────────────────────────── */
+  .analysis-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.07));
+    overflow-x: visible;
+  }
+  .analysis-tab {
+    padding: 0.65rem 1.1rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+    margin-bottom: -1px;
+  }
+  .analysis-tab:hover { color: var(--text-primary); }
+  .analysis-tab.active {
+    color: var(--accent, #6366f1);
+    border-bottom-color: var(--accent, #6366f1);
+  }
+
+  /* ── KPI grid ───────────────────────────────────────── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.875rem;
+    margin-bottom: 1rem;
+  }
+  @media (min-width: 768px) { .kpi-grid { grid-template-columns: repeat(4, 1fr); } }
+  .kpi-grid--3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 600px) { .kpi-grid--3 { grid-template-columns: repeat(2, 1fr); } }
+
+  .kpi-card {
+    background: var(--bg-card, #1a1d2e);
+    border: 1px solid var(--border-subtle, rgba(255,255,255,0.07));
+    border-radius: 10px;
+    padding: 1.1rem 1.25rem;
+  }
+  .kpi-card--green { border-left: 3px solid var(--emerald-500); }
+  .kpi-card--red   { border-left: 3px solid var(--rose-500); }
+  .kpi-card--amber { border-left: 3px solid #fbbf24; }
+  .kpi-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+  }
+  .kpi-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.1;
+  }
+  .kpi-delta {
+    font-size: 0.73rem;
+    margin-top: 0.45rem;
+    color: var(--text-muted);
+  }
+  .kpi-sub { font-size: 0.73rem; color: var(--text-muted); margin-top: 0.3rem; }
+  .delta-up { color: #34d399; font-weight: 600; }
+  .delta-down { color: #f43f5e; font-weight: 600; }
+
+  /* ── KPI hover tooltip ────────────────────────────────── */
+  .kpi-card--tippable { position: relative; cursor: default; }
+  .kpi-tooltip {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 240px;
+    max-width: 340px;
+    max-height: 300px;
+    overflow-y: auto;
+    z-index: 200;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-default);
+    border-radius: 10px;
+    padding: 0.75rem 0.875rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    font-size: 0.76rem;
+    pointer-events: none;
+  }
+  .kpi-tooltip-title {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+  }
+  .kpi-tooltip-row {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+  }
+  .kpi-tooltip-date {
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .kpi-tooltip-desc {
+    flex: 1;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .kpi-tooltip-amt {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .kpi-tooltip-divider {
+    border-top: 1px solid var(--border-subtle);
+    margin: 0.4rem 0;
+  }
+  .kpi-tooltip-row--total .kpi-tooltip-desc { font-weight: 600; color: var(--text-primary); }
+  .kpi-tooltip-row--total .kpi-tooltip-amt  { font-size: 0.85rem; }
+  .kpi-tooltip-empty { color: var(--text-muted); font-style: italic; }
+
+  /* ── Privacy / blur mode ─────────────────────────────── */
+  .kpi-value, .kpi-delta, .quick-stat-value, .privacy-num, .amount-mono, .kpi-tooltip-amt {
+    transition: filter 0.25s ease;
+  }
+  [data-privacy] .kpi-value,
+  [data-privacy] .kpi-delta,
+  [data-privacy] .quick-stat-value,
+  [data-privacy] .privacy-num,
+  [data-privacy] .amount-mono,
+  [data-privacy] .kpi-tooltip-amt {
+    filter: blur(8px);
+    user-select: none;
+  }
+
+  /* ── Overview two-col row ───────────────────────────── */
+  .overview-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    margin-bottom: var(--space-4);
+  }
+  @media (min-width: 900px) { .overview-row { grid-template-columns: 1.6fr 1fr; } }
+
+  /* ── Donut + legend side-by-side ────────────────────── */
+  .donut-with-legend {
+    display: flex;
+    align-items: flex-start;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .donut-container {
+    position: relative;
+    width: 200px;
+    height: 200px;
+    flex-shrink: 0;
+  }
+  .donut-legend {
+    flex: 1;
+    min-width: 100px;
+    max-height: 200px;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: 1fr; /* overridden by JS */
+    gap: 0.25rem 0.5rem;
+    align-content: start;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.12) transparent;
+  }
+  .donut-legend::-webkit-scrollbar { width: 4px; }
+  .donut-legend::-webkit-scrollbar-track { background: transparent; }
+  .donut-legend::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+  /* On very narrow screens legend drops below chart */
+  @media (max-width: 480px) {
+    .donut-with-legend { flex-direction: column; }
+    .donut-container { width: 100%; height: 200px; }
+  }
+
+  /* ── Quick stats ────────────────────────────────────── */
+  .quick-stats-list { display: flex; flex-direction: column; gap: 0.8rem; }
+  .quick-stat-row { display: flex; justify-content: space-between; align-items: center; }
+  .quick-stat-label { font-size: 0.875rem; color: var(--text-muted); }
+  .quick-stat-value { font-size: 0.875rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  /* ── Progress bar ───────────────────────────────────── */
+  .runway-progress {
+    height: 6px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .runway-progress-fill {
+    height: 100%;
+    background: var(--accent, #6366f1);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+
+  /* ── Category table ─────────────────────────────────── */
+  .cat-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    display: inline-block; flex-shrink: 0;
+  }
+  .sub-badge {
+    font-size: 0.62rem; background: var(--bg-overlay); color: var(--text-secondary);
+    padding: 1px 5px; border-radius: 8px; flex-shrink: 0;
+  }
+  .parent-row:hover td { background: rgba(255,255,255,0.015); }
+  .child-row td { background: rgba(0,0,0,0.1); }
+  .tag-badge {
+    font-size: 0.68rem; background: var(--bg-overlay); color: var(--text-secondary);
+    padding: 2px 6px; border-radius: 8px; display: inline-block; margin-right: 2px;
+  }
+
+  /* ── Subs vs disc split bar ─────────────────────────── */
+  .split-bar {
+    height: 10px; border-radius: 5px;
+    background: rgba(245,158,11,0.25); overflow: hidden;
+  }
+  .split-bar-a { height: 100%; background: #6366f1; border-radius: 5px; }
+  .split-bar-labels {
+    display: flex; justify-content: space-between;
+    margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted);
+  }
+
+  /* ── Subscriptions ──────────────────────────────────── */
+  /* ── Card body padding ──────────────────────────────── */
+  .card-body { padding: 0 var(--space-5) var(--space-5); }
+
+  /* Tables inside cards: flush edge-to-edge, no inner border/radius */
+  .card .table-wrapper {
+    border-radius: 0;
+    border: none;
+    border-top: 1px solid var(--border-subtle);
+    padding: 0;
+  }
+
+  .sub-group-header {
+    padding: 0.75rem var(--space-5) 0.3rem;
+    font-size: 0.68rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-muted);
+  }
+  .status-badge { font-size: 0.73rem; padding: 2px 8px; border-radius: 10px; }
+  .status-badge.paid { background: rgba(16,185,129,0.15); color: #34d399; }
+  .status-badge.pending { background: rgba(156,163,175,0.08); color: var(--text-muted); }
+  .status-badge.inactive { background: rgba(239,68,68,0.1); color: #f87171; }
+
+  /* ── Trends controls ────────────────────────────────── */
+  .trends-controls {
+    display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;
+  }
+  .btn-group { display: flex; gap: 0.25rem; }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
+    color: var(--text-muted); padding: 0.35rem 0.7rem;
+    border-radius: 6px; font-size: 0.78rem; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--text-primary); }
+
+  /* ── Chart grid (reused) ────────────────────────────── */
+  .chart-section-grid {
+    display: grid; grid-template-columns: 1fr; gap: 1rem; margin-top: 0;
+  }
+  @media (min-width: 900px) {
+    .chart-section-grid { grid-template-columns: 1fr 1fr; }
+  }
+  /* Trends chart legend (horizontal, under chart) */
+  .chart-legend {
+    display: flex; flex-wrap: wrap; gap: 0.6rem;
+    margin-top: 0.75rem; padding-top: 0.75rem;
+    border-top: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
+  }
+  .chart-legend-item { display: flex; align-items: center; gap: 0.3rem; font-size: 0.73rem; color: var(--text-muted); }
+  .chart-legend-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+  /* Donut legend items (vertical, beside chart) */
+  .donut-legend-item {
+    position: relative;
+    display: flex; align-items: center; gap: 0.45rem;
+    font-size: 0.78rem; color: var(--text-secondary);
+    cursor: default; min-width: 0; overflow: hidden;
+    padding: 0.15rem 0.3rem;
+    border-radius: 4px;
+    transition: background 0.12s;
+  }
+  .donut-legend-item:hover { background: rgba(255,255,255,0.05); color: var(--text-primary); }
+  .donut-legend-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .donut-legend-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .donut-legend-value {
+    position: absolute; right: 0.3rem;
+    font-size: 0.72rem; font-variant-numeric: tabular-nums;
+    color: var(--text-primary);
+    background: var(--bg-card, #111827);
+    padding: 0 0.25rem;
+    opacity: 0;
+    transition: opacity 0.12s;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .donut-legend-item:hover .donut-legend-value { opacity: 1; }
+
+  /* ── Runway ─────────────────────────────────────────── */
+  .runway-header { padding: 1.5rem; margin-bottom: 1rem; }
+  .runway-top {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    flex-wrap: wrap; gap: 1rem;
+  }
+  .runway-countdown-block { display: flex; flex-direction: column; }
+  .runway-big-num { font-size: 3.5rem; font-weight: 700; line-height: 1; color: var(--accent, #6366f1); }
+  .runway-big-label { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem; }
+  .runway-bal-block { display: flex; flex-direction: column; align-items: flex-end; }
+  .runway-bal-val { font-size: 1.75rem; font-weight: 700; margin-top: 0.25rem; font-variant-numeric: tabular-nums; }
+  .runway-body-grid { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+  @media (min-width: 900px) { .runway-body-grid { grid-template-columns: 1.5fr 1fr; } }
+
+  /* ── Waterfall ──────────────────────────────────────── */
+  .waterfall { display: flex; flex-direction: column; }
+  .wf-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 0.55rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 0.875rem;
+  }
+  .wf-indent { padding-left: 1rem; color: var(--text-secondary, #8b92a8); }
+  .wf-total {
+    border-top: 2px solid rgba(255,255,255,0.1); border-bottom: none;
+    padding-top: 0.7rem; margin-top: 0.25rem;
+  }
+  .wf-section-label {
+    font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-muted); padding: 0.9rem 0 0.35rem;
+  }
+
+  /* ── Checklist ──────────────────────────────────────── */
+  .checklist { display: flex; flex-direction: column; }
+  .checklist-row {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.55rem 0; border-bottom: 1px solid rgba(255,255,255,0.04);
+    font-size: 0.875rem;
+  }
+  .cl-icon { width: 1.2rem; flex-shrink: 0; font-size: 0.85rem; }
+  .cl-paid .cl-icon { color: #34d399; }
+  .cl-pending .cl-icon { color: var(--text-muted); }
+  .cl-paid { color: var(--text-secondary, #8b92a8); }
+  .cl-name { flex: 1; }
+  .cl-amount { font-variant-numeric: tabular-nums; font-size: 0.8rem; color: var(--text-muted); }
+
+  /* ── Tab loading/error ──────────────────────────────── */
+  .tab-loading {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 3rem 1rem; color: var(--text-muted); justify-content: center;
+  }
+  .tab-error {
+    padding: 1.25rem; color: #f43f5e;
+    background: rgba(244,63,94,0.08); border-radius: 8px; margin-top: 0.5rem;
+  }
+
+  /* ── Amount mono ────────────────────────────────────── */
+  .amount-mono {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+    font-size: 0.875rem;
+  }
+
+  /* ── Anomaly banner ─────────────────────────────────── */
+  .anomaly-banner {
+    background: rgba(245, 158, 11, 0.06);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    border-radius: var(--radius-md);
+    margin-bottom: 1.25rem;
+    overflow: hidden;
+  }
+  .anomaly-banner-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.75rem 1rem; gap: 1rem;
+  }
+  .anomaly-banner-title {
+    font-size: 0.82rem; font-weight: 600; color: #f59e0b;
+    text-transform: uppercase; letter-spacing: 0.03em;
+  }
+  .anomaly-banner-sub {
+    font-size: 0.78rem; color: var(--text-muted);
+  }
+  .anomaly-item {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 1rem; padding: 0.75rem 1rem;
+    border-top: 1px solid rgba(245, 158, 11, 0.12);
+  }
+  .anomaly-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+  .anomaly-item-top { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; }
+  .anomaly-desc { font-size: 0.85rem; font-weight: 600; color: var(--text-primary); }
+  .anomaly-amount { font-size: 0.82rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .anomaly-item-detail { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.5; }
+  .anomaly-item-impact {
+    display: flex; align-items: center; gap: 0.35rem;
+    font-size: 0.75rem; color: #f59e0b; opacity: 0.85;
+  }
+  .anomaly-item-descs { font-size: 0.72rem; color: var(--text-muted); display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; }
+  .anomaly-desc-pill {
+    background: rgba(255,255,255,0.06); border-radius: 3px;
+    padding: 1px 5px; font-size: 0.7rem;
+  }
+  .anomaly-fix-btn {
+    flex-shrink: 0; font-size: 0.72rem; padding: 0.25rem 0.6rem;
+    background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.5);
+    color: #f59e0b; border-radius: var(--radius-sm);
+    cursor: pointer; transition: background 0.12s, color 0.12s; white-space: nowrap;
+  }
+  .anomaly-fix-btn:hover { background: rgba(245,158,11,0.28); }
+  .anomaly-dismiss-btn {
+    flex-shrink: 0; font-size: 0.72rem; padding: 0.25rem 0.6rem;
+    background: transparent; border: 1px solid rgba(245,158,11,0.3);
+    color: var(--text-muted); border-radius: var(--radius-sm);
+    cursor: pointer; transition: background 0.12s, color 0.12s;
+  }
+  .anomaly-dismiss-btn:hover { background: rgba(245,158,11,0.1); color: #f59e0b; }
+
+  /* ── Custom Date Range ───────────────────────────────────── */
+  .cr-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.55);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .cr-modal {
+    background: var(--bg-elevated, #1e2235);
+    border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
+    border-radius: var(--radius, 12px);
+    padding: 1.5rem;
+    width: 100%;
+    max-width: 440px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+  }
+  .cr-modal-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 1.1rem;
+  }
+  .cr-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.07));
+    margin-bottom: 1.25rem;
+  }
+  .cr-tab {
+    flex: 1;
+    padding: 0.45rem;
+    font-size: 0.78rem;
+    text-align: center;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .cr-tab.active { color: var(--text-primary); border-bottom-color: #6366f1; }
+  .cr-field { margin-bottom: 1rem; }
+  .cr-label { display: block; font-size: 0.73rem; color: var(--text-secondary); margin-bottom: 0.35rem; }
+  .cr-row { display: flex; gap: 0.5rem; align-items: center; }
+  .cr-input {
+    width: 4.5rem !important;
+    padding: 0.42rem 0.55rem !important;
+    height: auto !important;
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-default) !important;
+    border-radius: var(--radius-sm, 6px) !important;
+    color: var(--text-primary) !important;
+    font-size: 0.83rem !important;
+  }
+  .cr-select {
+    flex: 1 !important;
+    width: auto !important;
+    padding: 0.42rem 0.55rem !important;
+    height: auto !important;
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border-default) !important;
+    border-radius: var(--radius-sm, 6px) !important;
+    color: var(--text-primary) !important;
+    font-size: 0.83rem !important;
+  }
+  .cr-footer {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+    justify-content: flex-end;
+  }
+  .cr-btn-cancel {
+    padding: 0.42rem 1rem;
+    background: transparent;
+    border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
+    border-radius: var(--radius-sm, 6px);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: background 0.12s;
+  }
+  .cr-btn-cancel:hover { background: rgba(255,255,255,0.06); }
+  .cr-btn-apply {
+    padding: 0.42rem 1.1rem;
+    background: #6366f1;
+    border: none;
+    border-radius: var(--radius-sm, 6px);
+    color: #fff;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: opacity 0.12s;
+  }
+  .cr-btn-apply:hover { opacity: 0.85; }
+  /* "Custom Range" pill in header */
+  .cr-range-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.7rem;
+    font-size: 0.75rem;
+    border-radius: 99px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, border-color 0.12s;
+    border: 1px solid var(--border-subtle, rgba(255,255,255,0.1));
+    background: transparent;
+    color: var(--text-secondary);
+  }
+  .cr-range-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-primary); }
+  .cr-range-btn.active {
+    background: rgba(99,102,241,0.15);
+    border-color: rgba(99,102,241,0.5);
+    color: #818cf8;
+  }
+  .cr-range-btn.active:hover { background: rgba(99,102,241,0.25); }
+
+</style>
+
+<script>
+  const CATEGORY_COLOURS = [
+    'rgba(99,102,241,0.80)', 'rgba(249,115,22,0.80)',  'rgba(20,184,166,0.80)',
+    'rgba(234,179,8,0.80)',  'rgba(168,85,247,0.80)',   'rgba(59,130,246,0.80)',
+    'rgba(236,72,153,0.80)', 'rgba(16,185,129,0.80)',   'rgba(245,158,11,0.80)',
+    'rgba(239,68,68,0.80)',  'rgba(14,165,233,0.80)',   'rgba(132,204,103,0.80)',
+  ];
+  const BORDER_COLOURS = CATEGORY_COLOURS.map(c => c.replace('0.80', '1'));
+
+  function darkScales(opts = {}) {
+    return {
+      x: { grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false }, ticks: { color: '#515670', maxRotation: 30 }, ...opts.x },
+      y: { grid: { color: 'rgba(255,255,255,0.04)', drawBorder: false }, ticks: { color: '#515670', callback: v => window._privacyMode ? '●●●' : '£' + Math.abs(v).toLocaleString('en-GB', { maximumFractionDigits: 0 }) }, ...opts.y },
+    };
+  }
+
+  function analysis() {
+    return {
+      periods: {{ periods | tojson }},
+      selectedPeriodId: null,
+      periodDrop: { open: false },
+      selectedPeriodLabel: '',
+      get selectedPeriodDateRange() {
+        if (this.customRange) return this.formatCustomRangeDisplay();
+        const p = this.periods.find(p => String(p.id) === String(this.selectedPeriodId));
+        if (!p) return this.selectedPeriodLabel || '';
+        return p.option_label || p.label;
+      },
+      activeTab: sessionStorage.getItem('finance_analysis_tab') || 'overview',
+      tabs: {
+        overview:      { data: null, loading: false, loaded: false, error: '' },
+        spending:      { data: null, loading: false, loaded: false, error: '' },
+        subscriptions: { data: null, loading: false, loaded: false, error: '' },
+        trends:        { data: null, loading: false, loaded: false, error: '', forecast: null },
+        runway:        { data: null, loading: false, loaded: false, error: '' },
+      },
+      trendsRange: 12,
+      subSort: { col: 'name', dir: 1 },
+      catChart: { drillPath: null, selected: [], mode: 'stacked', multiSelect: false, chartType: 'bar' },
+      expandedCats: {},
+      _charts: {},
+      anomalies: [],
+      anomaliesExpanded: false,
+      kpiTip: null,
+      customRange: null,  // null or {label, start_date, end_date}
+      customRangeModal: { open: false, mode: 'rolling', rollingN: 3, rollingUnit: 'months', startPeriodId: null, endPeriodId: null },
+
+      init() {
+        if (!this.periods || !this.periods.length) return;
+        // Honour ?period_id in URL, then sessionStorage, then default to most recent
+        const urlParam  = new URLSearchParams(window.location.search).get('period_id');
+        const stored    = sessionStorage.getItem('finance_period_id');
+        const preferred = urlParam || stored;
+        const match     = preferred && this.periods.find(p => String(p.id) === String(preferred));
+        const first     = match || this.periods[0];
+        this.selectedPeriodId    = String(first.id);
+        this.selectedPeriodLabel = first.label;
+        // Default custom range modal period selectors
+        this.customRangeModal.startPeriodId = this.periods[this.periods.length - 1]?.id ?? null;
+        this.customRangeModal.endPeriodId   = this.periods[0]?.id ?? null;
+        // Restore custom range from localStorage
+        try {
+          const saved = localStorage.getItem('finance_custom_range');
+          if (saved) this.customRange = JSON.parse(saved);
+        } catch(e) { this.customRange = null; }
+        this.$nextTick(() => {
+          this.loadTab(this.activeTab);
+          this.loadAnomalies();
+        });
+        // Rebuild charts when sidebar privacy toggle fires
+        window.addEventListener('privacychanged', (e) => {
+          if (this.activeTab === 'trends' && this.tabs.trends.data) {
+            requestAnimationFrame(() => this.buildTrendsCharts(this.tabs.trends.data));
+          }
+          if (this.activeTab === 'spending' && this.tabs.spending.data) {
+            requestAnimationFrame(() => this.buildCategoriesChart());
+          }
+        });
+      },
+
+      switchTab(tab) {
+        this.activeTab = tab;
+        sessionStorage.setItem('finance_analysis_tab', tab);
+        if (!this.tabs[tab].loaded) {
+          this.loadTab(tab);
+        } else if (tab === 'trends') {
+          this.$nextTick(() => {
+            Object.values(this._charts).forEach(c => c && c.resize && c.resize());
+            if (window._catTrendChart) window._catTrendChart.resize();
+          });
+        } else if (tab === 'spending') {
+          this.$nextTick(() => { if (window._catSpendingChart) window._catSpendingChart.resize(); });
+        }
+      },
+
+      selectPeriodAnalysis(p) {
+        this.periodDrop.open = false;
+        if (this.customRange) {
+          this.customRange = null;
+          localStorage.removeItem('finance_custom_range');
+        }
+        this.selectedPeriodId = String(p.id);
+        this.onPeriodChange();
+      },
+
+      handleKeydown(e) {
+        const tag = document.activeElement?.tagName;
+        if (['INPUT','TEXTAREA','SELECT'].includes(tag) || document.activeElement?.isContentEditable) return;
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        if (this.customRange) {
+          this.stepCustomRange(e.key === 'ArrowRight' ? 1 : -1);
+          return;
+        }
+        const idx  = this.periods.findIndex(p => String(p.id) === String(this.selectedPeriodId));
+        // periods are newest-first: ArrowRight = newer (idx-1), ArrowLeft = older (idx+1)
+        const next = e.key === 'ArrowRight' ? idx - 1 : idx + 1;
+        if (next >= 0 && next < this.periods.length) {
+          this.selectPeriodAnalysis(this.periods[next]);
+        }
+      },
+
+
+      onPeriodChange() {
+        const p = this.periods.find(p => String(p.id) === String(this.selectedPeriodId));
+        this.selectedPeriodLabel = p ? p.label : '';
+        sessionStorage.setItem('finance_period_id', this.selectedPeriodId);
+        ['overview','spending','subscriptions','runway','trends'].forEach(t => {
+          this.tabs[t].loaded = false; this.tabs[t].data = null;
+        });
+        history.replaceState(null, '', `/analysis?period_id=${this.selectedPeriodId}`);
+        if (['overview','spending','subscriptions','runway','trends'].includes(this.activeTab)) {
+          this.loadTab(this.activeTab);
+        }
+      },
+
+      loadTab(tab) {
+        if (tab === 'overview')      return this.loadOverview();
+        if (tab === 'spending')      return this.loadSpending();
+        if (tab === 'subscriptions') return this.loadSubscriptions();
+        if (tab === 'trends')        return this.loadTrends();
+        if (tab === 'runway')        return this.loadRunway(this.selectedPeriodId);
+      },
+
+      getApiParams() {
+        if (this.customRange) {
+          return `start_date=${this.customRange.start_date}&end_date=${this.customRange.end_date}`;
+        }
+        return `period_id=${this.selectedPeriodId}`;
+      },
+
+      _isoLocal(dt) {
+        // Format a Date as YYYY-MM-DD using LOCAL calendar date (avoids UTC midnight shift)
+        const y = dt.getFullYear();
+        const m = String(dt.getMonth() + 1).padStart(2, '0');
+        const d = String(dt.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      },
+
+      applyCustomRange() {
+        const m = this.customRangeModal;
+        let start_date, end_date, label, stepN = 0, stepUnit = 'days', stepDays = 0;
+        if (m.mode === 'rolling') {
+          const n = Math.max(1, parseInt(m.rollingN) || 1);
+          const today = new Date();
+          const end = new Date(today);
+          end.setDate(end.getDate() + 1); // exclusive end
+          end_date = this._isoLocal(end);
+          const start = new Date(today);
+          if (m.rollingUnit === 'years') {
+            start.setFullYear(start.getFullYear() - n);
+            stepUnit = 'years';
+          } else {
+            start.setMonth(start.getMonth() - n);
+            stepUnit = 'months';
+          }
+          start_date = this._isoLocal(start);
+          stepN = n;
+          const unitLabel = m.rollingUnit === 'years' ? 'Year(s)' : 'Month(s)';
+          label = `Last ${n} ${unitLabel}`;
+        } else {
+          const sp = this.periods.find(p => String(p.id) === String(m.startPeriodId));
+          const ep = this.periods.find(p => String(p.id) === String(m.endPeriodId));
+          if (!sp || !ep) return;
+          // Use the earlier of the two as start, the later as end
+          const [startP, endP] = sp.start_date <= ep.start_date ? [sp, ep] : [ep, sp];
+          start_date = startP.start_date;
+          end_date   = endP.end_date;
+          stepUnit = 'days';
+          stepDays = Math.round((new Date(end_date) - new Date(start_date)) / 86400000);
+          label = `${startP.option_label} → ${endP.option_label}`;
+        }
+        this.customRange = { label, start_date, end_date, stepN, stepUnit, stepDays };
+        localStorage.setItem('finance_custom_range', JSON.stringify(this.customRange));
+        this.customRangeModal.open = false;
+        // Reload period-sensitive tabs
+        ['overview','spending','subscriptions','runway','trends'].forEach(t => {
+          this.tabs[t].loaded = false; this.tabs[t].data = null;
+        });
+        // If on runway, switch to overview since runway is hidden for custom ranges
+        const tab = this.activeTab === 'runway' ? 'overview' : this.activeTab;
+        if (['overview','spending','subscriptions','trends'].includes(tab)) {
+          if (tab !== this.activeTab) this.activeTab = tab;
+          this.loadTab(tab);
+        }
+      },
+
+      clearCustomRange() {
+        this.customRange = null;
+        localStorage.removeItem('finance_custom_range');
+        ['overview','spending','subscriptions','runway','trends'].forEach(t => {
+          this.tabs[t].loaded = false; this.tabs[t].data = null;
+        });
+        if (['overview','spending','subscriptions','runway','trends'].includes(this.activeTab)) {
+          this.loadTab(this.activeTab);
+        }
+      },
+
+      stepCustomRange(direction) {
+        const cr = this.customRange;
+        if (!cr) return;
+        if (direction > 0 && !this.canStepCustomForward()) return;
+        const shiftDate = (iso, dir) => {
+          // Parse as local date to avoid UTC-midnight timezone issues
+          const [y, mo, d] = iso.split('-').map(Number);
+          const dt = new Date(y, mo - 1, d);
+          if (cr.stepUnit === 'years') {
+            dt.setFullYear(dt.getFullYear() + dir * cr.stepN);
+          } else if (cr.stepUnit === 'months') {
+            dt.setMonth(dt.getMonth() + dir * cr.stepN);
+          } else {
+            dt.setDate(dt.getDate() + dir * cr.stepDays);
+          }
+          return this._isoLocal(dt);
+        };
+        const newStart = shiftDate(cr.start_date, direction);
+        const newEnd   = shiftDate(cr.end_date,   direction);
+        this.customRange = { ...cr, start_date: newStart, end_date: newEnd };
+        localStorage.setItem('finance_custom_range', JSON.stringify(this.customRange));
+        ['overview','spending','subscriptions','trends'].forEach(t => {
+          this.tabs[t].loaded = false; this.tabs[t].data = null;
+        });
+        if (['overview','spending','subscriptions','trends'].includes(this.activeTab)) {
+          this.loadTab(this.activeTab);
+        }
+      },
+
+      canStepCustomForward() {
+        if (!this.customRange) return false;
+        // Disable forward navigation when end_date is already at or past tomorrow
+        const end = new Date(this.customRange.end_date);
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        tomorrow.setHours(0, 0, 0, 0);
+        return end < tomorrow;
+      },
+
+      formatCustomRangeDisplay() {
+        const cr = this.customRange;
+        if (!cr) return '';
+        const fmtDate = iso => {
+          const [y, m, d] = iso.split('-').map(Number);
+          return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        };
+        // end_date is exclusive — subtract 1 day for display
+        const [ey, em, ed] = cr.end_date.split('-').map(Number);
+        const endDisp = new Date(ey, em - 1, ed - 1);
+        const endIso = this._isoLocal(endDisp);
+        return `${fmtDate(cr.start_date)} – ${fmtDate(endIso)}`;
+      },
+
+      async loadAnomalies() {
+        try {
+          const res = await fetch('/api/analysis/anomalies');
+          if (!res.ok) return;
+          this.anomalies = await res.json();
+        } catch(e) { /* silent — anomalies are non-critical */ }
+      },
+
+      async dismissAnomaly(txId) {
+        try {
+          await fetch(`/api/analysis/anomalies/${txId}/dismiss`, { method: 'POST' });
+          this.anomalies = this.anomalies.filter(a => a.transaction_id !== txId);
+        } catch(e) { /* silent */ }
+      },
+
+      async fixAnomaly(txId, expectedPeriodId, expectedPeriodLabel) {
+        try {
+          const res = await fetch(`/api/analysis/anomalies/${txId}/fix`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ expected_period_id: expectedPeriodId }),
+          });
+          if (!res.ok) return;
+          // Remove from anomaly list and reload active tab to reflect moved transaction
+          this.anomalies = this.anomalies.filter(a => a.transaction_id !== txId);
+          // Mark all tabs stale so data refreshes
+          ['overview','breakdown','subscriptions','trends','runway'].forEach(t => {
+            if (this[t]) { this[t].loaded = false; this[t].data = null; }
+          });
+          // Reload the active tab
+          this.loadTab(this.activeTab);
+        } catch(e) { /* silent */ }
+      },
+
+      async loadOverview() {
+        this.tabs.overview.loading = true; this.tabs.overview.error = '';
+        try {
+          const res = await fetch(`/api/analysis/overview?${this.getApiParams()}`);
+          if (!res.ok) throw new Error(`Server error ${res.status}`);
+          this.tabs.overview.data = await res.json();
+          this.tabs.overview.loaded = true;
+          this.$nextTick(() => this.buildDonutChart(this.tabs.overview.data));
+        } catch(e) {
+          this.tabs.overview.error = 'Could not load overview: ' + e.message;
+        } finally { this.tabs.overview.loading = false; }
+      },
+
+      async loadSpending() {
+        this.tabs.spending.loading = true; this.tabs.spending.error = '';
+        try {
+          const res = await fetch(`/api/analysis/breakdown?${this.getApiParams()}`);
+          if (!res.ok) throw new Error(`Server error ${res.status}`);
+          this.tabs.spending.data = await res.json();
+          this.tabs.spending.loaded = true;
+          this.$nextTick(() => requestAnimationFrame(() => this.buildCategoriesChart()));
+        } catch(e) {
+          this.tabs.spending.error = 'Could not load breakdown: ' + e.message;
+        } finally { this.tabs.spending.loading = false; }
+      },
+
+
+      buildCategoriesChart() {
+        const data = this.tabs.spending.data;
+        if (!data || !data.hierarchy) return;
+
+        // Map colour names (from categories page) to rgba values for Chart.js
+        const CAT_COLOUR_RGBA = {
+          blue:    'rgba(59,130,246,0.80)',
+          emerald: 'rgba(16,185,129,0.80)',
+          violet:  'rgba(139,92,246,0.80)',
+          rose:    'rgba(244,63,94,0.80)',
+          amber:   'rgba(245,158,11,0.80)',
+          teal:    'rgba(20,184,166,0.80)',
+          orange:  'rgba(249,115,22,0.80)',
+          sky:     'rgba(14,165,233,0.80)',
+          lime:    'rgba(132,204,22,0.80)',
+          pink:    'rgba(236,72,153,0.80)',
+        };
+
+        const items = data.hierarchy;
+        const labels = items.map(i => i.name);
+        const values = items.map(i => Math.abs(i.total));
+        const colours = items.map(i => CAT_COLOUR_RGBA[i.color_name] || CATEGORY_COLOURS[0]);
+        const borderColours = colours.map(c => c.replace('0.80', '1'));
+
+        if (window._catSpendingChart) {
+          window._catSpendingChart.destroy();
+          window._catSpendingChart = null;
+          const old = document.getElementById('catSpendingChart');
+          if (old?.parentNode) { const n = old.cloneNode(false); old.parentNode.replaceChild(n, old); }
+        }
+
+        const ctx = document.getElementById('catSpendingChart');
+        if (!ctx) return;
+
+        window._catSpendingChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{
+              label: 'Spending',
+              data: values,
+              backgroundColor: colours,
+              borderColor: borderColours,
+              borderWidth: 1,
+              borderRadius: 4,
+            }]
+          },
+          options: {
+            animation: false,
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: ctx => window._privacyMode ? null : ' £' + ctx.raw.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                }
+              }
+            },
+            scales: {
+              x: {
+                beginAtZero: true,
+                ticks: { callback: v => window._privacyMode ? '●●●' : '£' + v.toLocaleString('en-GB') },
+                grid: { color: 'rgba(0,0,0,0.06)' }
+              },
+              y: { grid: { display: false } }
+            }
+          }
+        });
+      },
+
+      async loadSubscriptions() {
+        this.tabs.subscriptions.loading = true; this.tabs.subscriptions.error = '';
+        try {
+          const res = await fetch(`/api/analysis/subscriptions?${this.getApiParams()}`);
+          if (!res.ok) throw new Error(`Server error ${res.status}`);
+          this.tabs.subscriptions.data = await res.json();
+          this.tabs.subscriptions.loaded = true;
+        } catch(e) {
+          this.tabs.subscriptions.error = 'Could not load subscriptions: ' + e.message;
+        } finally { this.tabs.subscriptions.loading = false; }
+      },
+
+      async loadTrends() {
+        this.tabs.trends.loading = true; this.tabs.trends.error = '';
+        try {
+          const trendsParams = this.customRange
+            ? this.getApiParams()
+            : `period_id=${this.selectedPeriodId}&periods=${this.trendsRange}`;
+          const [tr, fr] = await Promise.all([
+            fetch(`/api/analysis/trends?${trendsParams}`),
+            fetch('/api/analysis/forecast'),
+          ]);
+          if (!tr.ok) throw new Error(`Server error ${tr.status}`);
+          this.tabs.trends.data = await tr.json();
+          this.tabs.trends.forecast = fr.ok ? await fr.json() : null;
+          this.tabs.trends.loaded = true;
+          // Use rAF after $nextTick: x-if recreates the canvas DOM node when data changes,
+          // and the browser needs a full layout pass before Chart.js can read dimensions.
+          this.$nextTick(() => requestAnimationFrame(() => this.buildTrendsCharts(this.tabs.trends.data)));
+        } catch(e) {
+          this.tabs.trends.error = 'Could not load trends: ' + e.message;
+        } finally { this.tabs.trends.loading = false; }
+      },
+
+      async setTrendsRange(n) {
+        this.trendsRange = n;
+        this.tabs.trends.loaded = false; this.tabs.trends.data = null;
+        this.loadTrends();
+      },
+
+      async loadRunway(pid) {
+        this.tabs.runway.loading = true; this.tabs.runway.error = '';
+        try {
+          const res = await fetch(`/api/analysis/runway?period_id=${pid}`);
+          if (!res.ok) throw new Error(`Server error ${res.status}`);
+          this.tabs.runway.data = await res.json();
+          this.tabs.runway.loaded = true;
+        } catch(e) {
+          this.tabs.runway.error = 'Could not load runway: ' + e.message;
+        } finally { this.tabs.runway.loading = false; }
+      },
+
+      toggleCat(id) {
+        this.expandedCats = { ...this.expandedCats, [id]: !this.expandedCats[id] };
+      },
+
+      getFlatCategories(hierarchy, expandedCats) {
+        if (!hierarchy) return [];
+        const flat = [];
+        for (const cat of hierarchy) {
+          flat.push({ ...cat, _type: 'parent', _key: 'p-' + (cat.id ?? cat.name) });
+          if (expandedCats[cat.id ?? cat.name] && cat.children && cat.children.length) {
+            for (const child of cat.children) {
+              flat.push({ ...child, _type: 'child', _key: 'c-' + child.id, color_name: cat.color_name });
+            }
+          }
+        }
+        return flat;
+      },
+
+      buildDonutChart(data) {
+        const ctx = document.getElementById('donutChart');
+        if (!ctx) return;
+        if (this._charts.donut) { this._charts.donut.destroy(); this._charts.donut = null; }
+        const items = data.donut || [];
+        const labels = items.map(i => i.name);
+        const values = items.map(i => i.total);
+        const colours = items.map(i => i.color || CATEGORY_COLOURS[i.color_index % CATEGORY_COLOURS.length]);
+        this._charts.donut = new Chart(ctx, {
+          type: 'doughnut',
+          data: { labels, datasets: [{ data: values, backgroundColor: colours, borderColor: 'rgba(0,0,0,0)', hoverOffset: 6 }] },
+          options: {
+            responsive: true, maintainAspectRatio: false, cutout: '62%',
+            plugins: {
+              legend: { display: false },
+              tooltip: { callbacks: { label: c => window._privacyMode ? null : ` ${c.label}: £${c.raw.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` } },
+            },
+          },
+        });
+        const legendEl = document.getElementById('donutLegend');
+        if (legendEl) {
+          legendEl.innerHTML = items.map((item, i) => {
+            const val = '£' + Math.abs(item.total).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            return `<div class="donut-legend-item" data-idx="${i}">
+              <span class="donut-legend-swatch" style="background:${colours[i]};"></span>
+              <span class="donut-legend-name">${item.name}</span>
+              <span class="donut-legend-value">${val}</span>
+            </div>`;
+          }).join('');
+
+          // Columns driven by height first, then width
+          // Items fill vertically; new columns added only when height exceeded
+          const CHART_H = 200; // matches .donut-container height
+          const MIN_COL_W = 100; // min px per column for readable names
+          const totalItems = items.length;
+          const updateCols = () => {
+            const firstItem = legendEl.querySelector('.donut-legend-item');
+            const itemH = firstItem ? (firstItem.offsetHeight || 22) : 22;
+            const rowsPerCol = Math.max(1, Math.floor(CHART_H / (itemH + 4)));
+            const colsForHeight = Math.ceil(totalItems / rowsPerCol);
+            const colsForWidth = Math.max(1, Math.floor(legendEl.offsetWidth / MIN_COL_W));
+            const cols = Math.min(colsForWidth, colsForHeight);
+            legendEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+          };
+          updateCols();
+          if (this._legendObserver) this._legendObserver.disconnect();
+          this._legendObserver = new ResizeObserver(updateCols);
+          this._legendObserver.observe(legendEl);
+
+          // No Chart.js manipulation on legend hover — the CSS .donut-legend-value
+          // overlay handles value display; touching chart.tooltip state from outside
+          // the canvas breaks Chart.js's internal _lastEvent hover tracking.
+        }
+      },
+
+      buildTrendsCharts(data) {
+        const labels = data.labels || [];
+        // catTrend is stored outside Alpine's reactive proxy to avoid Chart.js v4 interference
+        if (window._catTrendChart) { window._catTrendChart.destroy(); window._catTrendChart = null; }
+        ['incomeOut','surplus','subDisc'].forEach(k => {
+          if (this._charts[k]) { this._charts[k].destroy(); this._charts[k] = null; }
+        });
+
+        // Category chart — delegate to rebuildCatChart() which handles drill-in / multi-select.
+        // Do NOT reset catChart here so selections survive a period-data refresh.
+        this.rebuildCatChart();
+
+        // Income vs Outgoing
+        const incCtx = document.getElementById('incomeOutChart');
+        if (incCtx) {
+          this._charts.incomeOut = new Chart(incCtx, {
+            type: 'line',
+            data: { labels, datasets: [
+              { label: 'Income', data: data.income, borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.12)', pointBackgroundColor: '#10b981', pointRadius: 4, borderWidth: 2, tension: 0.3, fill: true },
+              { label: 'Outgoing', data: data.outgoing, borderColor: '#f43f5e', backgroundColor: 'rgba(244,63,94,0.10)', pointBackgroundColor: '#f43f5e', pointRadius: 4, borderWidth: 2, tension: 0.3, fill: true },
+            ]},
+            options: { animation: false, responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, hover: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => (c.raw == null || window._privacyMode) ? null : ` ${c.dataset.label}: £${c.raw.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` } } }, scales: darkScales() },
+          });
+        }
+
+        // Surplus
+        const surCtx = document.getElementById('surplusChart');
+        if (surCtx) {
+          const cols = (data.surplus || []).map(v => v >= 0 ? 'rgba(16,185,129,0.7)' : 'rgba(244,63,94,0.7)');
+          this._charts.surplus = new Chart(surCtx, {
+            type: 'bar',
+            data: { labels, datasets: [{ label: 'Surplus', data: data.surplus, backgroundColor: cols, borderColor: cols, borderRadius: 3 }] },
+            options: { animation: false, responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, hover: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => { if (c.raw == null || window._privacyMode) return null; const s = c.raw >= 0 ? '+' : ''; return ` Surplus: ${s}£${Math.abs(c.raw).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; } } } }, scales: { ...darkScales(), y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#515670', callback: v => window._privacyMode ? '●●●' : (v >= 0 ? '+' : '') + '£' + Math.abs(v).toLocaleString('en-GB', { maximumFractionDigits: 0 }) } } } },
+          });
+        }
+
+        // Subs vs Discretionary
+        const sdCtx = document.getElementById('subDiscChart');
+        if (sdCtx) {
+          this._charts.subDisc = new Chart(sdCtx, {
+            type: 'line',
+            data: { labels, datasets: [
+              { label: 'Subscriptions', data: data.subs, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.25)', pointRadius: 3, borderWidth: 2, tension: 0.3, fill: true },
+              { label: 'Discretionary', data: data.discretionary, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.18)', pointRadius: 3, borderWidth: 2, tension: 0.3, fill: true },
+            ]},
+            options: { animation: false, responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false, axis: 'x' }, hover: { mode: 'index', intersect: false, axis: 'x' }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => (c.raw == null || window._privacyMode) ? null : ` ${c.dataset.label}: £${c.raw.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` } } }, scales: darkScales() },
+          });
+        }
+      },
+
+      rebuildCatChart() {
+        const data = this.tabs.trends.data;
+        if (!data || !data.categories) return;
+        const labels = data.labels;
+        const drillPath = this.catChart.drillPath;
+        const selected = this.catChart.selected;
+
+        // Determine items at current level
+        let allNames, getDataFn, hasChildrenFn;
+        if (drillPath) {
+          const parentCat = data.categories[drillPath] || {};
+          const kids = parentCat.children || {};
+          allNames = Object.keys(kids).sort();
+          getDataFn = n => kids[n] || labels.map(() => 0);
+          hasChildrenFn = () => false;
+        } else {
+          allNames = Object.keys(data.categories).sort();
+          getDataFn = n => (data.categories[n] || {}).total || labels.map(() => 0);
+          hasChildrenFn = n => Object.keys((data.categories[n] || {}).children || {}).length > 0;
+        }
+
+        const activeNames = selected.length > 0 ? allNames.filter(n => selected.includes(n)) : allNames;
+        const isLine = this.catChart.chartType === 'line';
+        // Only force stacked at the top level; sub-category view always respects the user's mode choice
+        const forceStacked = !isLine && !drillPath && activeNames.length > 5;
+        const isStacked = !isLine && (forceStacked || this.catChart.mode === 'stacked');
+
+        // Build datasets
+        const datasets = activeNames.map(name => {
+          const ci = allNames.indexOf(name);
+          const bgColor = CATEGORY_COLOURS[ci % CATEGORY_COLOURS.length];
+          const bdColor = BORDER_COLOURS[ci % BORDER_COLOURS.length];
+          const d = {
+            label: name,
+            data: getDataFn(name),
+            backgroundColor: isLine ? bgColor.replace('0.80', '0.15') : bgColor,
+            borderColor: bdColor,
+            borderWidth: isLine ? 2 : 1,
+            borderRadius: isLine ? 0 : 2,
+          };
+          if (isLine) { d.tension = 0.3; d.pointRadius = 4; d.fill = false; }
+          return d;
+        });
+
+        // Store chart in window (not this._charts) to bypass Alpine's reactive Proxy,
+        // which interferes with Chart.js v4's internal configure() → beforeUpdate path.
+        // Destroy and recreate on every rebuild — in-place dataset replacement causes
+        // a blank canvas when the dataset count changes (Chart.js v4 animation state).
+        if (window._catTrendChart) {
+          window._catTrendChart.destroy();
+          window._catTrendChart = null;
+          const oldTip = document.getElementById('catTrendTooltip');
+          if (oldTip) oldTip.remove();
+          // Chart.js v4 destroy() leaves an unbalanced clip region on the 2D context.
+          // Clone the canvas to get a guaranteed-clean context for the next instance.
+          const old = document.getElementById('catTrendChart');
+          if (old?.parentNode) { const n = old.cloneNode(false); old.parentNode.replaceChild(n, old); }
+        }
+        {
+          // Tooltip is driven entirely by raw mousemove so the hovered-series highlight
+          // updates on every pixel of cursor movement, not just when the column changes.
+          const _tipShow = (clientX, clientY, title, items, hoveredDs) => {
+            let el = document.getElementById('catTrendTooltip');
+            if (!el) {
+              el = document.createElement('div');
+              el.id = 'catTrendTooltip';
+              el.style.cssText = 'position:fixed;pointer-events:none;z-index:200;min-width:190px;max-width:260px;border-radius:9px;padding:10px 13px;font-size:0.775rem;box-shadow:0 4px 20px rgba(0,0,0,0.45);';
+              document.body.appendChild(el);
+            }
+            // Theme colours from CSS vars.
+            const ref = document.querySelector('.card') || document.body;
+            const cs  = getComputedStyle(ref);
+            const bg  = cs.getPropertyValue('--bg-card').trim()      || '#1a2035';
+            const bdr = cs.getPropertyValue('--border-default').trim()|| 'rgba(255,255,255,0.1)';
+            const fg  = cs.getPropertyValue('--text-primary').trim()  || '#e2e5f1';
+            const mut = cs.getPropertyValue('--text-muted').trim()    || '#515670';
+            el.style.background = bg;
+            el.style.border     = `1px solid ${bdr}`;
+            el.style.color      = fg;
+            el.style.display    = 'block';
+
+            const hItem = hoveredDs !== null ? items.find(i => i.datasetIndex === hoveredDs) : null;
+            let html = `<div style="font-weight:600;margin-bottom:7px;padding-bottom:6px;border-bottom:1px solid ${bdr};">${title}</div>`;
+
+            if (hItem) {
+              const dot = hItem.dataset.borderColor;
+              const val = window._privacyMode ? '●●●' : '£' + hItem.raw.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              html += `<div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;padding:5px 7px;border-radius:5px;background:rgba(99,102,241,0.13);border:1px solid rgba(99,102,241,0.25);font-weight:600;">
+                <span style="flex-shrink:0;width:9px;height:9px;border-radius:50%;background:${dot};"></span>
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${hItem.dataset.label}</span>
+                <span style="white-space:nowrap;">${val}</span>
+              </div>`;
+            }
+
+            html += items.map(item => {
+              if (item.raw == null) return '';
+              const isH = item.datasetIndex === hoveredDs;
+              const dot = item.dataset.borderColor;
+              const val = window._privacyMode ? '●●●' : '£' + item.raw.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+              return `<div style="display:flex;align-items:center;gap:6px;padding:1px 0;${isH ? 'font-weight:600;' : `opacity:0.72;color:${mut};`}">
+                <span style="flex-shrink:0;width:7px;height:7px;border-radius:50%;background:${dot};"></span>
+                <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.dataset.label}</span>
+                <span style="white-space:nowrap;padding-left:10px;">${val}</span>
+              </div>`;
+            }).join('');
+
+            el.innerHTML = html;
+
+            // Position right of cursor, clamped to viewport.
+            const gap  = 16;
+            const tipW = el.offsetWidth  || 220;
+            const tipH = el.offsetHeight || 100;
+            let left = clientX + gap;
+            let top  = clientY - Math.round(tipH / 3);
+            if (left + tipW > window.innerWidth  - 8) left = clientX - tipW - gap;
+            if (top  + tipH > window.innerHeight - 8) top  = window.innerHeight - tipH - 8;
+            if (top < 8) top = 8;
+            el.style.left = left + 'px';
+            el.style.top  = top  + 'px';
+          };
+          const _tipHide = () => {
+            const el = document.getElementById('catTrendTooltip');
+            if (el) el.style.display = 'none';
+          };
+
+          const catCtx = document.getElementById('catTrendChart');
+          if (catCtx) {
+            window._catTrendChart = new Chart(catCtx, {
+              type: isLine ? 'line' : 'bar',
+              data: { labels, datasets },
+              options: {
+                animation: false,
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false, axis: 'x' },
+                hover:       { mode: 'index', intersect: false, axis: 'x' },
+                plugins: {
+                  legend: { display: false },
+                  tooltip: { enabled: false },
+                },
+                scales: {
+                  x: { stacked: isStacked, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#515670', maxRotation: 30 } },
+                  y: { stacked: isStacked, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#515670', callback: v => window._privacyMode ? '●●●' : '£' + v.toLocaleString('en-GB', { maximumFractionDigits: 0 }) } },
+                },
+              },
+            });
+
+            catCtx.addEventListener('mousemove', (e) => {
+              const chart = window._catTrendChart;
+              if (!chart) return;
+              // All items at this x-column (tooltip content)
+              const colEls = chart.getElementsAtEventForMode(e, 'index', { intersect: false, axis: 'x' }, false);
+              if (colEls.length === 0) { _tipHide(); return; }
+              // Nearest intersecting element (which series the cursor is physically over)
+              const nearEls  = chart.getElementsAtEventForMode(e, 'nearest', { intersect: true }, false);
+              const hoveredDs = nearEls.length > 0 ? nearEls[0].datasetIndex : null;
+              const xIdx  = colEls[0].index;
+              const title = chart.data.labels[xIdx];
+              const items = colEls.map(el => ({
+                datasetIndex: el.datasetIndex,
+                raw:          chart.data.datasets[el.datasetIndex].data[el.index],
+                dataset:      chart.data.datasets[el.datasetIndex],
+              }));
+              _tipShow(e.clientX, e.clientY, title, items, hoveredDs);
+            });
+            catCtx.addEventListener('mouseleave', _tipHide);
+          }
+        }
+
+        // Controls (back breadcrumb + stacked/grouped toggle + bar/line toggle)
+        window._catChartBack = () => this.catChartBack();
+        window._catChartToggleMode = () => { this.catChart.mode = this.catChart.mode === 'stacked' ? 'grouped' : 'stacked'; this.rebuildCatChart(); };
+        window._catChartToggleMultiSelect = () => {
+          this.catChart.multiSelect = !this.catChart.multiSelect;
+          this.catChart.selected = [];
+          this.rebuildCatChart();
+        };
+        window._catChartSetType = (t) => { this.catChart.chartType = t; this.rebuildCatChart(); };
+        const ctrlEl = document.getElementById('catTrendControls');
+        if (ctrlEl) {
+          const btnStyle = 'display:inline-flex;align-items:center;gap:4px;background:rgba(100,100,100,0.08);border:1px solid rgba(100,100,100,0.2);border-radius:20px;padding:3px 10px;cursor:pointer;font-size:0.775rem;color:var(--text-muted);white-space:nowrap;';
+          const msActive = this.catChart.multiSelect;
+          const msBtnStyle = btnStyle + (msActive ? 'background:rgba(99,102,241,0.15);border-color:rgba(99,102,241,0.4);color:rgba(99,102,241,0.9);' : '');
+          let html = `<button onclick="window._catChartToggleMultiSelect()" style="${msBtnStyle}" title="When on, click categories to compare them side-by-side. When off, clicking a parent shows its sub-categories.">Multi-select${msActive ? ' ✓' : ''}</button>`;
+          if (drillPath) {
+            html += `<button onclick="window._catChartBack()" style="${btnStyle}">← <span style="color:var(--text-primary);margin-left:2px;">All categories</span></button>`;
+            html += `<span style="font-size:0.8rem;color:var(--text-muted);">›</span><span style="font-size:0.8rem;font-weight:500;color:var(--text-primary);">${drillPath}</span>`;
+          }
+          // Show stacked/grouped toggle (only in bar mode) when drilled in or when 2–5 active series
+          let stackToggleHtml = '';
+          if (!isLine) {
+            if ((drillPath && allNames.length > 1) || (!drillPath && !forceStacked && activeNames.length > 1)) {
+              const modeLabel = this.catChart.mode === 'stacked' ? 'Grouped view' : 'Stacked view';
+              stackToggleHtml = `<button onclick="window._catChartToggleMode()" style="${btnStyle}">${modeLabel}</button>`;
+            } else if (!drillPath && forceStacked && activeNames.length > 5) {
+              stackToggleHtml = `<span style="font-size:0.72rem;color:var(--text-muted);">Stacked (${activeNames.length} series)</span>`;
+            }
+          }
+          // Bar / Line toggle — always visible, pushed to the right
+          const barActive = !isLine;
+          const segBase = 'display:inline-flex;align-items:center;padding:3px 9px;cursor:pointer;font-size:0.775rem;border:1px solid rgba(100,100,100,0.2);';
+          const segOn  = segBase + 'background:rgba(99,102,241,0.2);color:rgba(99,102,241,0.95);border-color:rgba(99,102,241,0.4);';
+          const segOff = segBase + 'background:rgba(100,100,100,0.06);color:var(--text-muted);';
+          const typeToggleHtml = `<span style="display:inline-flex;border-radius:20px;overflow:hidden;border:1px solid rgba(100,100,100,0.2);">
+            <button onclick="window._catChartSetType('bar')"  style="${(barActive  ? segOn : segOff) + 'border-radius:20px 0 0 20px;border-right:none;'}" title="Stacked bar chart">Bar</button>
+            <button onclick="window._catChartSetType('line')" style="${(!barActive ? segOn : segOff) + 'border-radius:0 20px 20px 0;'}" title="Line chart">Line</button>
+          </span>`;
+          // Spacer pushes right-side controls to the right
+          html += stackToggleHtml;
+          html += `<span style="flex:1;"></span>`;
+          html += typeToggleHtml;
+          ctrlEl.innerHTML = html;
+        }
+
+        // Interactive legend
+        const legendEl = document.getElementById('catTrendLegend');
+        if (legendEl) {
+          legendEl.style.display = 'flex';
+          const isMultiSelect = this.catChart.multiSelect;
+          const isDrillMode = !isMultiSelect && !drillPath;
+          legendEl.innerHTML = allNames.map((name, i) => {
+            const isSelected = selected.includes(name);
+            const isActive = selected.length === 0 || isSelected;
+            const hasKids = hasChildrenFn(name);
+            // In drill mode at top level, leaves are non-interactive
+            const isClickable = drillPath || isMultiSelect || hasKids;
+            const color = CATEGORY_COLOURS[i % CATEGORY_COLOURS.length];
+            const selStyle = isSelected
+              ? `background:rgba(100,100,100,0.15);border-color:rgba(100,100,100,0.4);`
+              : `background:transparent;border-color:rgba(100,100,100,0.12);`;
+            const cursor = isClickable ? 'pointer' : 'default';
+            const suffix = hasKids && !drillPath ? '<span style="opacity:0.45;font-size:0.7rem;margin-left:1px;">›</span>' : '';
+            return `<button data-catname="${name.replace(/&/g,'&amp;').replace(/"/g,'&quot;')}" ${!isClickable ? 'data-noop="1"' : ''}
+              style="display:inline-flex;align-items:center;gap:5px;${selStyle}border:1px solid;border-radius:20px;padding:3px 10px 3px 6px;cursor:${cursor};font-size:0.775rem;color:var(--text-primary);opacity:${isActive ? '1' : '0.38'};transition:opacity 0.12s,background 0.12s,border-color 0.12s;white-space:nowrap;">
+              <span style="width:9px;height:9px;border-radius:50%;background:${color};flex-shrink:0;"></span>${name}${suffix}
+            </button>`;
+          }).join('');
+          legendEl.querySelectorAll('[data-catname]:not([data-noop])').forEach(btn => {
+            btn.addEventListener('click', () => this.catChartToggle(btn.dataset.catname));
+          });
+        }
+      },
+
+      catChartToggle(name) {
+        const data = this.tabs.trends.data;
+        if (!data) return;
+        if (this.catChart.drillPath) {
+          const idx = this.catChart.selected.indexOf(name);
+          if (this.catChart.multiSelect) {
+            // Multi-select: toggle in/out of selection set
+            if (idx === -1) this.catChart.selected.push(name);
+            else this.catChart.selected.splice(idx, 1);
+          } else {
+            // Single-select: swap to this sub-category (deselect if already selected)
+            this.catChart.selected = idx === -1 ? [name] : [];
+          }
+        } else if (this.catChart.multiSelect) {
+          // Multi-select mode: toggle any top-level category, no drill-in
+          const idx = this.catChart.selected.indexOf(name);
+          if (idx === -1) this.catChart.selected.push(name);
+          else this.catChart.selected.splice(idx, 1);
+        } else {
+          // Drill mode: parents drill into sub-categories; leaves do nothing
+          const cat = data.categories[name] || {};
+          const hasChildren = Object.keys(cat.children || {}).length > 0;
+          if (hasChildren) {
+            this.catChart.drillPath = name;
+            this.catChart.selected = [];
+          }
+        }
+        this.rebuildCatChart();
+      },
+
+      catChartBack() {
+        this.catChart.drillPath = null;
+        this.catChart.selected = [];
+        this.rebuildCatChart();
+      },
+
+      fmt(value) {
+        if (value == null) return '—';
+        const abs = Math.abs(value);
+        const str = abs.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return (value < 0 ? '-' : '') + '£' + str;
+      },
+
+      // Subscription table helpers
+      subSortBy(col) {
+        if (this.subSort.col === col) { this.subSort.dir *= -1; }
+        else { this.subSort.col = col; this.subSort.dir = 1; }
+      },
+      subSortedSubs(subs) {
+        if (!subs) return [];
+        const { col, dir } = this.subSort;
+        return [...subs].sort((a, b) => {
+          let av, bv;
+          if (col === 'name')       { av = (a.display_name || '').toLowerCase(); bv = (b.display_name || '').toLowerCase(); }
+          else if (col === 'amount')   { av = Math.abs(a.latest_amount || 0); bv = Math.abs(b.latest_amount || 0); }
+          else if (col === 'monthly')  { av = Math.abs(a.monthly_equiv || 0); bv = Math.abs(b.monthly_equiv || 0); }
+          else if (col === 'status')   { av = a.paid_this_period > 0 ? 0 : 1; bv = b.paid_this_period > 0 ? 0 : 1; }
+          else if (col === 'date')     { av = a.period_date || '9999'; bv = b.period_date || '9999'; }
+          else if (col === 'activity') { av = a.is_inactive ? (a.days_since_last ?? 99999) : 0; bv = b.is_inactive ? (b.days_since_last ?? 99999) : 0; }
+          else { av = 0; bv = 0; }
+          if (av < bv) return -1 * dir;
+          if (av > bv) return  1 * dir;
+          return 0;
+        });
+      },
+      subSortIcon(col) {
+        if (this.subSort.col !== col) return '↕';
+        return this.subSort.dir === 1 ? '↑' : '↓';
+      },
+      fmtSubDate(iso, predicted, showYear = false) {
+        if (!iso) return '—';
+        const [y, m, d] = iso.split('-').map(Number);
+        const opts = showYear ? { day: 'numeric', month: 'short', year: 'numeric' } : { day: 'numeric', month: 'short' };
+        const label = new Date(y, m - 1, d).toLocaleDateString('en-GB', opts);
+        return predicted ? '~' + label : label;
+      },
+
+      fmtSigned(value) {
+        if (value == null) return '—';
+        const abs = Math.abs(value);
+        const str = abs.toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const sign = value > 0 ? '+' : value < 0 ? '-' : '';
+        return sign + '£' + str;
+      },
+
+      delta(current, previous) {
+        if (previous == null || previous === 0) return '';
+        const pct = ((current - previous) / Math.abs(previous)) * 100;
+        return (pct > 0 ? '+' : '') + pct.toFixed(1) + '%';
+      },
+    };
+  }
+</script>
+{% endblock %}

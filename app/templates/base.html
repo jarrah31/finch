@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="description" content="Personal finance tracker" />
+  <meta name="theme-color" content="#0f1117" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+  <title>{% block title %}Finance{% endblock %} — Finch</title>
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- App stylesheet -->
+  <link rel="stylesheet" href="/static/app.css?v={{ css_version }}" />
+
+  <!-- Theme + privacy: apply stored preferences before render to avoid flash -->
+  <script>
+    (function () {
+      var t = localStorage.getItem('theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', t);
+      if (localStorage.getItem('finance_privacy') === 'true') {
+        document.documentElement.setAttribute('data-privacy', '');
+      }
+      window._privacyMode = localStorage.getItem('finance_privacy') === 'true';
+    })();
+  </script>
+
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
+
+  <!-- Shared Alpine utilities (must load before Alpine initialises) -->
+  <script src="/static/cat-modal-utils.js"></script>
+
+  <!-- Alpine.js -->
+  <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+
+  {% block head %}{% endblock %}
+</head>
+
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════
+       APP SHELL
+       ═══════════════════════════════════════════════════════ -->
+  <div class="app-shell">
+
+    <!-- ── Sidebar (desktop ≥ 768px) ── -->
+    <aside class="sidebar" role="navigation" aria-label="Main navigation">
+
+      <!-- Logo -->
+      <div class="sidebar-logo">
+        <div class="sidebar-logo-icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+            <path d="M9 12h6M12 9v6"/>
+          </svg>
+        </div>
+        <span class="sidebar-logo-text">Fin<span>ch</span></span>
+      </div>
+
+      <!-- Nav links -->
+      <nav class="sidebar-nav">
+
+        <span class="sidebar-nav-label">Menu</span>
+
+        <a href="/analysis"
+           class="nav-item {% if '/analysis' in request.url.path %}active{% endif %}"
+           aria-current="{% if '/analysis' in request.url.path %}page{% endif %}">
+          <!-- Analysis / chart icon -->
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          Analysis
+        </a>
+
+        <a href="/transactions"
+           class="nav-item {% if '/transactions' in request.url.path %}active{% endif %}"
+           aria-current="{% if '/transactions' in request.url.path %}page{% endif %}">
+          <!-- Transactions / list icon -->
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+          </svg>
+          Transactions
+        </a>
+
+        <a href="/rules"
+           class="nav-item {% if '/rules' in request.url.path %}active{% endif %}"
+           aria-current="{% if '/rules' in request.url.path %}page{% endif %}">
+          <!-- Rules / tag icon -->
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+            <line x1="7" y1="7" x2="7.01" y2="7"/>
+          </svg>
+          Rules
+        </a>
+
+        <a href="/categories"
+           class="nav-item {% if '/categories' in request.url.path %}active{% endif %}"
+           aria-current="{% if '/categories' in request.url.path %}page{% endif %}">
+          <!-- Categories / folder icon -->
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+          Categories
+        </a>
+
+        <a href="/settings"
+           class="nav-item {% if '/settings' in request.url.path %}active{% endif %}"
+           aria-current="{% if '/settings' in request.url.path %}page{% endif %}">
+          <!-- Settings / gear icon -->
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          Settings
+        </a>
+
+      </nav>
+
+      <!-- Privacy toggle -->
+      <div style="padding:0 0.75rem 0.25rem;flex-shrink:0;">
+        <button
+          id="privacy-toggle-sidebar"
+          onclick="togglePrivacy()"
+          title="Toggle privacy mode"
+          aria-label="Toggle privacy mode"
+          class="sidebar-toggle-btn"
+        >
+          <!-- Eye icon (shown when privacy is OFF) -->
+          <svg id="privacy-icon-eye" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+          <!-- Eye-slash icon (shown when privacy is ON) -->
+          <svg id="privacy-icon-eye-slash" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none;flex-shrink:0;"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>
+          <span id="privacy-toggle-label">Hide amounts</span>
+        </button>
+      </div>
+
+      <!-- Theme toggle -->
+      <div style="padding:0 0.75rem 0.5rem;flex-shrink:0;">
+        <button
+          id="theme-toggle-sidebar"
+          onclick="toggleTheme()"
+          title="Toggle light/dark theme"
+          aria-label="Toggle light/dark theme"
+          class="sidebar-toggle-btn"
+        >
+          <!-- Moon icon (shown in light mode to switch to dark) -->
+          <svg id="theme-icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none;flex-shrink:0;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          <!-- Sun icon (shown in dark mode to switch to light) -->
+          <svg id="theme-icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          <span id="theme-toggle-label">Light mode</span>
+        </button>
+      </div>
+
+      <!-- Sidebar footer -->
+      <div class="sidebar-footer" style="padding:0.75rem 1rem;">
+        <a href="/account"
+           style="display:flex;align-items:center;gap:0.625rem;padding:0.5rem 0.625rem;border-radius:8px;text-decoration:none;transition:background 0.15s;margin-bottom:2px;"
+           :style="''"
+           onmouseenter="this.style.background='var(--bg-overlay)'" onmouseleave="this.style.background='transparent'"
+           aria-label="Account settings"
+        >
+          <div style="width:28px;height:28px;border-radius:50%;background:var(--bg-overlay);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div class="text-sm font-medium truncate" style="color:var(--text-primary);">My Finances</div>
+            <div class="text-xs" style="color:var(--text-muted);">Account settings</div>
+          </div>
+        </a>
+        <form method="POST" action="/logout" style="margin:0;">
+          <button
+            type="submit"
+            style="width:100%;display:flex;align-items:center;gap:0.5rem;padding:0.4rem 0.625rem;background:none;border:none;border-radius:6px;cursor:pointer;color:var(--text-muted);font-size:0.8125rem;font-family:inherit;transition:background 0.15s,color 0.15s;text-align:left;"
+            onmouseenter="this.style.background='var(--bg-overlay)';this.style.color='var(--text-secondary)'" onmouseleave="this.style.background='transparent';this.style.color='var(--text-muted)'"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Sign out
+          </button>
+        </form>
+      </div>
+
+    </aside>
+    <!-- /sidebar -->
+
+
+    <!-- ── Main wrapper ── -->
+    <div class="main-content" id="main-content">
+
+      <!-- ── Top bar (mobile only) ── -->
+      <header class="topbar" role="banner">
+        <div class="topbar-title">{% block topbar_title %}{% block title_mobile %}{% endblock %}{% endblock %}</div>
+        <div class="topbar-actions">
+          {% block topbar_actions %}{% endblock %}
+          <button
+            onclick="toggleTheme()"
+            title="Toggle light/dark theme"
+            aria-label="Toggle light/dark theme"
+            class="btn-icon"
+            id="theme-toggle-mobile"
+          >
+            <svg id="theme-icon-moon-mobile" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <svg id="theme-icon-sun-mobile" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- ── Page content ── -->
+      <main id="content" role="main">
+        {% block content %}{% endblock %}
+      </main>
+
+    </div>
+    <!-- /main-content -->
+
+
+    <!-- ── Bottom navigation (mobile only) ── -->
+    <nav class="bottom-nav" role="navigation" aria-label="Mobile navigation">
+
+
+      <a href="/analysis"
+         class="bottom-nav-item {% if '/analysis' in request.url.path %}active{% endif %}"
+         aria-label="Analysis"
+         aria-current="{% if '/analysis' in request.url.path %}page{% endif %}">
+        <div class="bottom-nav-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+        </div>
+        <span>Analysis</span>
+      </a>
+
+      <a href="/transactions"
+         class="bottom-nav-item {% if '/transactions' in request.url.path %}active{% endif %}"
+         aria-label="Transactions"
+         aria-current="{% if '/transactions' in request.url.path %}page{% endif %}">
+        <div class="bottom-nav-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>
+          </svg>
+        </div>
+        <span>Txns</span>
+      </a>
+
+      <a href="/rules"
+         class="bottom-nav-item {% if '/rules' in request.url.path %}active{% endif %}"
+         aria-label="Rules"
+         aria-current="{% if '/rules' in request.url.path %}page{% endif %}">
+        <div class="bottom-nav-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+            <line x1="7" y1="7" x2="7.01" y2="7"/>
+          </svg>
+        </div>
+        <span>Rules</span>
+      </a>
+
+      <a href="/settings"
+         class="bottom-nav-item {% if '/settings' in request.url.path %}active{% endif %}"
+         aria-label="Settings"
+         aria-current="{% if '/settings' in request.url.path %}page{% endif %}">
+        <div class="bottom-nav-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </div>
+        <span>Settings</span>
+      </a>
+
+    </nav>
+    <!-- /bottom-nav -->
+
+  </div>
+  <!-- /app-shell -->
+
+
+  <!-- ═══════════════════════════════════════════════════════
+       TOAST CONTAINER
+       ═══════════════════════════════════════════════════════ -->
+  <div id="toast-container"
+       class="toast-container"
+       role="region"
+       aria-label="Notifications"
+       aria-live="polite"
+       aria-atomic="false">
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════════
+       TOAST UTILITY SCRIPT
+       ═══════════════════════════════════════════════════════ -->
+  <script>
+    /* ── Theme toggle ──────────────────────────────────────── */
+    function _applyThemeIcons(theme) {
+      var isDark = theme === 'dark';
+      // Sidebar icons/label
+      var sunS  = document.getElementById('theme-icon-sun');
+      var moonS = document.getElementById('theme-icon-moon');
+      var lbl   = document.getElementById('theme-toggle-label');
+      if (sunS)  sunS.style.display  = isDark  ? '' : 'none';
+      if (moonS) moonS.style.display = isDark  ? 'none' : '';
+      if (lbl)   lbl.textContent     = isDark  ? 'Light mode' : 'Dark mode';
+      // Mobile topbar icons
+      var sunM  = document.getElementById('theme-icon-sun-mobile');
+      var moonM = document.getElementById('theme-icon-moon-mobile');
+      if (sunM)  sunM.style.display  = isDark  ? '' : 'none';
+      if (moonM) moonM.style.display = isDark  ? 'none' : '';
+    }
+
+    function _applyPrivacyIcon(isPrivate) {
+      var eye      = document.getElementById('privacy-icon-eye');
+      var eyeSlash = document.getElementById('privacy-icon-eye-slash');
+      var lbl      = document.getElementById('privacy-toggle-label');
+      if (eye)      eye.style.display      = isPrivate ? 'none' : '';
+      if (eyeSlash) eyeSlash.style.display = isPrivate ? ''     : 'none';
+      if (lbl)      lbl.textContent        = isPrivate ? 'Show amounts' : 'Hide amounts';
+    }
+
+    function togglePrivacy() {
+      var html      = document.documentElement;
+      var isPrivate = !html.hasAttribute('data-privacy');
+      if (isPrivate) { html.setAttribute('data-privacy', ''); }
+      else           { html.removeAttribute('data-privacy'); }
+      localStorage.setItem('finance_privacy', isPrivate);
+      window._privacyMode = isPrivate;
+      _applyPrivacyIcon(isPrivate);
+      window.dispatchEvent(new CustomEvent('privacychanged', { detail: { privacy: isPrivate } }));
+    }
+
+    function toggleTheme() {
+      var html    = document.documentElement;
+      var current = html.getAttribute('data-theme') || 'dark';
+      var next    = current === 'dark' ? 'light' : 'dark';
+      html.classList.add('theme-transition');
+      html.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      _applyThemeIcons(next);
+      setTimeout(function () { html.classList.remove('theme-transition'); }, 300);
+    }
+
+    // Sync icons with current theme/privacy on load
+    document.addEventListener('DOMContentLoaded', function () {
+      _applyThemeIcons(document.documentElement.getAttribute('data-theme') || 'dark');
+      _applyPrivacyIcon(document.documentElement.hasAttribute('data-privacy'));
+    });
+
+    /**
+     * Toast notification system.
+     *
+     * Usage:
+     *   Toast.show('Saved successfully')
+     *   Toast.show('Something went wrong', { type: 'error' })
+     *   Toast.show('Processing…', { type: 'info', duration: 0 })  // persistent
+     *   Toast.show('Budget exceeded', { type: 'warning', message: 'You are over by £42' })
+     *
+     * Types: 'success' | 'error' | 'info' | 'warning'
+     */
+    const Toast = (() => {
+      const ICONS = {
+        success: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`,
+        error:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
+        info:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+        warning: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+      };
+
+      const DISMISS_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+      let _counter = 0;
+
+      function show(title, opts = {}) {
+        const {
+          type     = 'success',
+          message  = '',
+          duration = 4000,
+        } = opts;
+
+        const id    = `toast-${++_counter}`;
+        const el    = document.createElement('div');
+        el.className = `toast toast-${type}`;
+        el.id        = id;
+        el.setAttribute('role', 'alert');
+
+        el.innerHTML = `
+          <div class="toast-icon">${ICONS[type] ?? ICONS.info}</div>
+          <div class="toast-content">
+            <div class="toast-title">${_escape(title)}</div>
+            ${message ? `<div class="toast-message">${_escape(message)}</div>` : ''}
+          </div>
+          <button class="toast-dismiss" aria-label="Dismiss notification">${DISMISS_ICON}</button>
+        `;
+
+        const container = document.getElementById('toast-container');
+        container.appendChild(el);
+
+        // Dismiss on button click
+        el.querySelector('.toast-dismiss').addEventListener('click', () => dismiss(id));
+
+        // Auto-dismiss
+        if (duration > 0) {
+          setTimeout(() => dismiss(id), duration);
+        }
+
+        return id;
+      }
+
+      function dismiss(id) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.add('removing');
+        el.addEventListener('animationend', () => el.remove(), { once: true });
+        // Fallback in case animationend doesn't fire
+        setTimeout(() => el.remove(), 500);
+      }
+
+      function _escape(str) {
+        const d = document.createElement('div');
+        d.textContent = String(str);
+        return d.innerHTML;
+      }
+
+      return { show, dismiss };
+    })();
+
+    // ── HTMX integration ──────────────────────────────────
+    // Trigger toasts from HTMX responses via response headers:
+    //   HX-Trigger: {"showToast": {"title": "Saved!", "type": "success"}}
+    document.addEventListener('showToast', (e) => {
+      const { title = 'Done', type = 'success', message = '' } = e.detail ?? {};
+      Toast.show(title, { type, message });
+    });
+
+  /* ── Category colour helpers (used by rules + transactions pages) ── */
+  window.CAT_PALETTE = ['blue','emerald','violet','rose','amber','teal','orange','sky','lime','pink'];
+  window.catColorName = function(cat, allCats) {
+    if (!cat) return 'blue';
+    if (cat.color) return cat.color;
+    const tops = allCats.filter(c => !c.parent_id).sort((a, b) => a.id - b.id);
+    const i = tops.findIndex(c => c.id === cat.id);
+    return i >= 0 ? CAT_PALETTE[i % CAT_PALETTE.length] : 'blue';
+  };
+  window.catColorClass = function(categoryId, allCats) {
+    if (!categoryId) return '';
+    const cat = allCats.find(c => c.id === categoryId);
+    if (!cat) return '';
+    const top = cat.parent_id ? (allCats.find(c => c.id === cat.parent_id) || cat) : cat;
+    return 'cat-color-' + catColorName(top, allCats);
+  };
+
+    // ── Chart.js global defaults ───────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+      if (typeof Chart === 'undefined') return;
+
+      const em  = '#10b981';   // emerald-500
+      const rse = '#f43f5e';   // rose-500
+      const muted = '#515670'; // text-muted
+
+      Chart.defaults.color          = '#8b92a8';
+      Chart.defaults.borderColor    = 'rgba(255,255,255,0.06)';
+      Chart.defaults.font.family    = "'Inter', system-ui, sans-serif";
+      Chart.defaults.font.size      = 12;
+
+      Chart.defaults.plugins.legend.display         = false;
+      Chart.defaults.plugins.tooltip.backgroundColor = '#1e2130';
+      Chart.defaults.plugins.tooltip.borderColor     = 'rgba(255,255,255,0.10)';
+      Chart.defaults.plugins.tooltip.borderWidth     = 1;
+      Chart.defaults.plugins.tooltip.padding         = 10;
+      Chart.defaults.plugins.tooltip.cornerRadius    = 8;
+      Chart.defaults.plugins.tooltip.titleColor      = '#f0f2f8';
+      Chart.defaults.plugins.tooltip.bodyColor       = '#8b92a8';
+      Chart.defaults.plugins.tooltip.titleFont       = { weight: '600', size: 13 };
+      Chart.defaults.plugins.tooltip.callbacks       = {
+        ...Chart.defaults.plugins.tooltip.callbacks,
+        label: (ctx) => {
+          const val = ctx.parsed.y ?? ctx.parsed;
+          if (typeof val === 'number') {
+            return ` £${Math.abs(val).toLocaleString('en-GB', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          }
+          return ctx.formattedValue;
+        },
+      };
+
+      // Scale defaults
+      Chart.defaults.scale.grid.color        = 'rgba(255,255,255,0.05)';
+      Chart.defaults.scale.ticks.color       = '#515670';
+      Chart.defaults.scale.grid.drawBorder   = false;
+    });
+  </script>
+
+  {% block scripts %}{% endblock %}
+
+</body>
+</html>

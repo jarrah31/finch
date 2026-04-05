@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Data & docs
+data/
+docs/
+
+# Claude
+.claude/
+CLAUDE.md
+
+# Cached merchant logos (downloaded at runtime from Logo.dev)
+app/static/logos/*.png
+
+# OS
+.DS_Store
