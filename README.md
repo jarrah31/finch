@@ -14,7 +14,7 @@ See [Screenshots.md](Screenshots.md) for a visual tour of the app.
 
 ### Analysis Dashboard
 - **Overview** — Income, spending, and surplus cards for the current period; category breakdown donut chart; upcoming subscriptions; recent transactions; anomaly detection
-- **Trends** — Category spending trend (stacked bar or multi-line chart); income vs outgoing; surplus trend; subscriptions vs discretionary spending — all filterable over 6, 12, 24 periods or all-time
+- **Trends** — Category spending trend (stacked bar or multi-line chart); income vs outgoing; surplus trend; subscriptions vs discretionary spending — all filterable over 6, 12, 24 periods or custom timeframes.
 - **Spending** — Category breakdown table with transaction counts and percentages; spending-by-tag breakdown
 - **Subscriptions** — Full subscription list with monthly/annual cost projections, last-seen dates, and paid/N/A/overdue status; active subscription count and total monthly cost cards
 - **Runway** — Days-until-payday tracker; where-you-stand breakdown (income received, subscriptions paid, discretionary spent); daily allowance; subscription checklist for the current period
@@ -27,13 +27,14 @@ See [Screenshots.md](Screenshots.md) for a visual tour of the app.
 - Re-categorise all transactions in one click
 
 ### Categorisation Rules
-- Keyword-based rules with AND matching (all keywords must appear in description)
+- Keyword-based rules with AND matching and negative keywords
+- Ability to specify amounts for particular rules to split multiple subscriptions from the same company
 - Per-rule: priority, case sensitivity, amount matching, exclusion keywords/amounts, tags, subscription flag, comments
 - Rules are applied automatically on import; editing or deleting a rule triggers a full recategorisation
 
 ### Categories
 - Hierarchical parent → sub-category structure
-- Custom colours and display order
+- Custom/automatic colours and display order
 - Shows rule count per category
 
 ### Settings
