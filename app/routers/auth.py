@@ -15,7 +15,7 @@ async def login_page(request: Request, next: str = "/"):
     if request.session.get("authenticated"):
         return RedirectResponse("/")
     return request.app.state.templates.TemplateResponse(
-        "login.html", {"request": request, "next": next, "error": None}
+        request, "login.html", {"next": next, "error": None}
     )
 
 
@@ -36,8 +36,8 @@ async def login_post(
             safe_next = next if (next.startswith("/") and not next.startswith("//")) else "/"
             return RedirectResponse(safe_next, status_code=303)
         return request.app.state.templates.TemplateResponse(
-            "login.html",
-            {"request": request, "next": next, "error": "Incorrect password. Please try again."},
+            request, "login.html",
+            {"next": next, "error": "Incorrect password. Please try again."},
             status_code=401,
         )
     finally:
@@ -60,7 +60,7 @@ async def setup_page(request: Request):
     if not getattr(request.app.state, "setup_required", True):
         return RedirectResponse("/login")
     return request.app.state.templates.TemplateResponse(
-        "setup.html", {"request": request, "error": None}
+        request, "setup.html", {"error": None}
     )
 
 
@@ -72,14 +72,14 @@ async def setup_post(
 ):
     if password != confirm:
         return request.app.state.templates.TemplateResponse(
-            "setup.html",
-            {"request": request, "error": "Passwords do not match."},
+            request, "setup.html",
+            {"error": "Passwords do not match."},
             status_code=400,
         )
     if len(password) < 8:
         return request.app.state.templates.TemplateResponse(
-            "setup.html",
-            {"request": request, "error": "Password must be at least 8 characters."},
+            request, "setup.html",
+            {"error": "Password must be at least 8 characters."},
             status_code=400,
         )
     db = await get_db()
@@ -102,7 +102,7 @@ async def setup_post(
 @router.get("/account", response_class=HTMLResponse)
 async def account_page(request: Request):
     return request.app.state.templates.TemplateResponse(
-        "account.html", {"request": request, "success": False, "error": None}
+        request, "account.html", {"success": False, "error": None}
     )
 
 

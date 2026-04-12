@@ -38,7 +38,7 @@ async def onboarding_page(request: Request):
         if row and row["value"] == "1":
             return RedirectResponse(url="/analysis", status_code=302)
         return request.app.state.templates.TemplateResponse(
-            "onboarding.html", {"request": request}
+            request, "onboarding.html", {}
         )
     finally:
         await db.close()
@@ -64,9 +64,8 @@ async def transactions_page(request: Request):
         logodev_pk = (pk_row[0] or "").strip() if pk_row else ""
 
         return request.app.state.templates.TemplateResponse(
-            "transactions.html",
+            request, "transactions.html",
             {
-                "request": request,
                 "categories": categories,
                 "accounts": accounts,
                 "periods": periods,
@@ -87,8 +86,8 @@ async def analysis_page(request: Request):
             p["option_label"] = f"{_fmt_period_date(p['start_date'])} – {_fmt_period_date(p['end_date'], is_end=True)}"
 
         return request.app.state.templates.TemplateResponse(
-            "analysis.html",
-            {"request": request, "periods": periods},
+            request, "analysis.html",
+            {"periods": periods},
         )
     finally:
         await db.close()
@@ -111,8 +110,8 @@ async def rules_page(request: Request):
         rules = await get_rules(db)
 
         return request.app.state.templates.TemplateResponse(
-            "rules.html",
-            {"request": request, "categories": categories, "rules": rules},
+            request, "rules.html",
+            {"categories": categories, "rules": rules},
         )
     finally:
         await db.close()
@@ -141,8 +140,8 @@ async def categories_page(request: Request):
         cat_rules = [dict(row) for row in await cursor2.fetchall()]
 
         return request.app.state.templates.TemplateResponse(
-            "categories.html",
-            {"request": request, "categories": categories, "cat_rules": cat_rules},
+            request, "categories.html",
+            {"categories": categories, "cat_rules": cat_rules},
         )
     finally:
         await db.close()
@@ -173,9 +172,8 @@ async def settings_page(request: Request):
         cat_count = (await cursor.fetchone())["count"]
 
         return request.app.state.templates.TemplateResponse(
-            "settings.html",
+            request, "settings.html",
             {
-                "request": request,
                 "settings": settings,
                 "tx_count": tx_count,
                 "cat_count": cat_count,
