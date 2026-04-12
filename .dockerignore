@@ -6,7 +6,9 @@ __pycache__/
 *.pyo
 
 # ── Runtime data & secrets (never bake into the image) ───────────────────────
-data/
+/data/
+# Explicitly keep the app's bundled data package (merchant dictionary etc.)
+!app/data/
 app/static/logos/*.png
 .env
 .env.local

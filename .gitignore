@@ -5,8 +5,8 @@ __pycache__/
 .venv/
 
 # Data & docs
-data/
-docs/
+/data/
+/docs/
 
 # Claude
 .claude/
