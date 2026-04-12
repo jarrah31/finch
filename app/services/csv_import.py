@@ -77,7 +77,13 @@ async def import_csv(
 
             balance_str = (row.get(_col("balance", "Balance")) or "").strip()
             balance = float(balance_str.replace(",", "")) if balance_str else None
-            account_name = (row.get(_col("account_name", "Account Name")) or "Unknown").strip()
+            # account_name_value = literal string set by onboarding wizard text input;
+            # falls back to column-based lookup for mappings created via Settings page.
+            _literal_acct = (column_mapping or {}).get("account_name_value", "").strip()
+            if _literal_acct:
+                account_name = _literal_acct
+            else:
+                account_name = (row.get(_col("account_name", "Account Name")) or "Unknown").strip()
             account_number = (row.get(_col("account_number", "Account Number")) or "unknown").strip()
 
             iso_date = parse_date(date_str, date_format)

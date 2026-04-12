@@ -539,40 +539,11 @@
                 </select>
               </div>
 
-              <!-- Balance (optional) -->
-              <div class="form-group">
-                <label class="form-label">Balance <span style="color:var(--text-muted);font-size:var(--text-xs);">optional</span></label>
-                <select class="input" x-model="csv.map.balance">
-                  <option value="">— not in CSV —</option>
-                  <template x-for="h in csv.detectedHeaders" :key="h"><option :value="h" x-text="h"></option></template>
-                </select>
-              </div>
-
-              <!-- Type (optional) -->
-              <div class="form-group">
-                <label class="form-label">Transaction Type <span style="color:var(--text-muted);font-size:var(--text-xs);">optional</span></label>
-                <select class="input" x-model="csv.map.type">
-                  <option value="">— not in CSV —</option>
-                  <template x-for="h in csv.detectedHeaders" :key="h"><option :value="h" x-text="h"></option></template>
-                </select>
-              </div>
-
-              <!-- Account Name (optional) -->
+              <!-- Account Name (text input — pre-filled from detected CSV value) -->
               <div class="form-group">
                 <label class="form-label">Account Name <span style="color:var(--text-muted);font-size:var(--text-xs);">optional</span></label>
-                <select class="input" x-model="csv.map.account_name">
-                  <option value="">— not in CSV —</option>
-                  <template x-for="h in csv.detectedHeaders" :key="h"><option :value="h" x-text="h"></option></template>
-                </select>
-              </div>
-
-              <!-- Account Number (optional) -->
-              <div class="form-group">
-                <label class="form-label">Account Number <span style="color:var(--text-muted);font-size:var(--text-xs);">optional</span></label>
-                <select class="input" x-model="csv.map.account_number">
-                  <option value="">— not in CSV —</option>
-                  <template x-for="h in csv.detectedHeaders" :key="h"><option :value="h" x-text="h"></option></template>
-                </select>
+                <input type="text" class="input" x-model="csv.accountName" placeholder="e.g. Joint Account">
+                <p class="form-hint">A label for this account. Pre-filled from your CSV if detected.</p>
               </div>
             </div>
           </div>
@@ -940,6 +911,7 @@
           sampleDate: '',    // first date value from data rows
           amountMode: 'single',
           amountModeDetected: false,  // true when auto-detected from data
+          accountName: '',   // editable account name (literal value, not a column ref)
           map: {
             date: null, description: null, amount: null,
             debit: null, credit: null, type: null,
@@ -1171,6 +1143,16 @@
                   this.detectDateFormat();
                 }
               }
+
+              // Pre-fill account name from first data row's detected account_name column
+              const acctCol = this.csv.map.account_name;
+              if (acctCol && this.csv.sampleRows.length > 0) {
+                const acctIdx = headers.indexOf(acctCol);
+                if (acctIdx >= 0) {
+                  const detected = (this.csv.sampleRows[0][acctIdx] || '').trim();
+                  if (detected) this.csv.accountName = detected;
+                }
+              }
             });
           };
           reader.readAsText(file);
@@ -1208,6 +1190,7 @@
           this.csv.map = { date: null, description: null, amount: null, debit: null, credit: null, type: null, balance: null, account_name: null, account_number: null };
           this.csv.amountMode = 'single';
           this.csv.amountModeDetected = false;
+          this.csv.accountName = '';
           this.csv.importResult = null;
           this.showRawCsv = false;
           this.dateFormats.forEach(f => f.matchesSample = false);
@@ -1217,11 +1200,17 @@
           if (this.csv.importing || !this.canImport()) return;
           this.csv.importing = true;
 
-          // Build mapping
+          // Build mapping (column header references only; account_name stored as literal)
           const raw = { ...this.csv.map };
           if (this.csv.amountMode === 'single') { raw.debit = null; raw.credit = null; }
           else { raw.amount = null; }
+          // account_name is used internally to detect the value, but we store the
+          // literal name (user-editable) rather than a column reference.
+          delete raw.account_name;
           const mapping = Object.fromEntries(Object.entries(raw).filter(([, v]) => v));
+          if (this.csv.accountName.trim()) {
+            mapping.account_name_value = this.csv.accountName.trim();
+          }
 
           // Save mapping + date format to settings first
           await fetch('/api/settings', {
