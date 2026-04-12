@@ -47,14 +47,29 @@ SORT_COLUMNS = {
     "date": "t.date",
     "description": "LOWER(t.description)",
     "amount": "t.amount",
+    "type": "LOWER(COALESCE(t.type, ''))",
     "category": "LOWER(COALESCE(c.name, ''))",
 }
+
+@router.get("/api/transactions/types")
+async def list_transaction_types():
+    """Return the distinct non-empty type values present in the transactions table."""
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT DISTINCT type FROM transactions WHERE type IS NOT NULL AND type != '' ORDER BY type"
+        )
+        return [row[0] for row in await cursor.fetchall()]
+    finally:
+        await db.close()
+
 
 @router.get("/api/transactions")
 async def list_transactions(
     account_id: Optional[int] = None,
     category_id: Optional[int] = None,
     uncategorized: bool = False,
+    tx_type: Optional[str] = None,
     pay_period_id: Optional[int] = None,
     search: Optional[str] = None,
     search_in: str = "both",
@@ -76,6 +91,9 @@ async def list_transactions(
             params.append(category_id)
         if uncategorized:
             conditions.append("t.category_id IS NULL")
+        if tx_type:
+            conditions.append("UPPER(t.type) = UPPER(?)")
+            params.append(tx_type)
         if search:
             words = search.split()
             if search_in == "description":

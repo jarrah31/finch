@@ -13,6 +13,7 @@
       account_id: '',
       category_id: (() => { const c = localStorage.getItem('txn_category') || ''; return c === 'uncategorized' ? '' : c; })(),
       uncategorized: localStorage.getItem('txn_category') === 'uncategorized',
+      tx_type: '',
       pay_period_id: localStorage.getItem('txn_period_id') || '',
       search: '',
       search_in: 'both',
@@ -38,13 +39,16 @@
     /* custom dropdown state */
     accountDrop: { open: false, search: '', display: 'All accounts' },
     categoryDrop: { open: false, search: '', display: 'All categories' },
+    typeDrop: { open: false, display: 'All types' },
     periodDrop: { open: false, search: '', display: 'All periods' },
+    typeValues: [],
 
     get queryString() {
       const params = new URLSearchParams();
       if (this.filters.account_id) params.set('account_id', this.filters.account_id);
       if (this.filters.category_id) params.set('category_id', this.filters.category_id);
       if (this.filters.uncategorized) params.set('uncategorized', 'true');
+      if (this.filters.tx_type) params.set('tx_type', this.filters.tx_type);
       if (this.filters.pay_period_id) params.set('pay_period_id', this.filters.pay_period_id);
       const trimmedSearch = this.filters.search.trim();
       if (trimmedSearch) params.set('search', trimmedSearch);
@@ -399,6 +403,7 @@
       const savedPeriod = localStorage.getItem('txn_period_id') || '';
       if (savedPeriod) { const p = periods.find(p => p.id == savedPeriod); if (p) periodDrop.display = p.label; }
     })();
+    fetch('/api/transactions/types').then(r => r.json()).then(v => { typeValues = v; });
     loadTransactions();
   "
 >
@@ -642,6 +647,33 @@
         </div>
       </div>
 
+      <!-- Type filter -->
+      <div class="form-group" x-show="typeValues.length > 0">
+        <label class="form-label">Type</label>
+        <div style="position:relative;" @click.outside="typeDrop.open = false">
+          <div style="position:relative;" class="input-with-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="input-icon" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+            <input type="text" class="form-input" style="padding-right:36px;cursor:pointer;"
+              :value="typeDrop.open ? '' : typeDrop.display"
+              :placeholder="typeDrop.open ? typeDrop.display : ''"
+              @focus="typeDrop.open = true"
+              @keydown.escape="typeDrop.open = false"
+              autocomplete="off" aria-label="Filter by transaction type" readonly>
+            <button type="button" class="btn-icon" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:24px;height:24px;" @click.stop="typeDrop.open = !typeDrop.open" tabindex="-1">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+          </div>
+          <div x-show="typeDrop.open" style="position:absolute;z-index:100;top:calc(100% + 3px);left:0;right:0;max-height:220px;overflow-y:auto;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:var(--radius-md);box-shadow:0 8px 24px rgba(0,0,0,0.5);">
+            <ul style="list-style:none;margin:0;padding:0.25rem;">
+              <li @click="selectFilter('typeDrop','tx_type','','All types')" style="padding:0.5rem 0.75rem;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--text-sm);color:var(--text-secondary);" :style="{ background: filters.tx_type === '' ? 'var(--bg-overlay)' : 'transparent' }" @mouseenter="$el.style.background='var(--bg-overlay)'" @mouseleave="$el.style.background=filters.tx_type===''?'var(--bg-overlay)':'transparent'">All types</li>
+              <template x-for="t in typeValues" :key="t">
+                <li @click="selectFilter('typeDrop','tx_type',t,t)" x-text="t" style="padding:0.5rem 0.75rem;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--text-sm);color:var(--text-secondary);font-variant-numeric:tabular-nums;text-transform:uppercase;letter-spacing:0.04em;" :style="{ background: filters.tx_type === t ? 'var(--bg-overlay)' : 'transparent' }" @mouseenter="$el.style.background='var(--bg-overlay)'" @mouseleave="$el.style.background=filters.tx_type===t?'var(--bg-overlay)':'transparent'"></li>
+              </template>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       <!-- Period filter -->
       <div class="form-group">
         <label class="form-label">Period</label>
@@ -707,9 +739,9 @@
         <button
           class="btn btn-secondary"
           @click="
-            filters = { account_id: '', category_id: '', uncategorized: false, pay_period_id: '', search: '', search_in: 'both', page: 1, per_page: parseInt(localStorage.getItem('txn_per_page') || '50'), sort_by: 'date', sort_dir: 'desc' };
+            filters = { account_id: '', category_id: '', uncategorized: false, tx_type: '', pay_period_id: '', search: '', search_in: 'both', page: 1, per_page: parseInt(localStorage.getItem('txn_per_page') || '50'), sort_by: 'date', sort_dir: 'desc' };
             localStorage.removeItem('txn_category'); localStorage.removeItem('txn_period_id'); localStorage.removeItem('txn_page');
-            accountDrop.display = 'All accounts'; categoryDrop.display = 'All categories'; periodDrop.display = 'All periods';
+            accountDrop.display = 'All accounts'; categoryDrop.display = 'All categories'; typeDrop.display = 'All types'; periodDrop.display = 'All periods';
             loadTransactions();
           "
           aria-label="Clear all filters"
@@ -813,7 +845,7 @@
             <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'date' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'date' && filters.sort_dir === 'desc' }" @click="sortBy('date')" aria-label="Sort by date">Date</th>
             <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'description' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'description' && filters.sort_dir === 'desc' }" @click="sortBy('description')" aria-label="Sort by description">Description</th>
             <th scope="col" class="sortable text-right" :class="{ 'sort-asc': filters.sort_by === 'amount' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'amount' && filters.sort_dir === 'desc' }" @click="sortBy('amount')" aria-label="Sort by amount">Amount</th>
-            <th scope="col">Type</th>
+            <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'type' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'type' && filters.sort_dir === 'desc' }" @click="sortBy('type')" aria-label="Sort by type">Type</th>
             <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'category' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'category' && filters.sort_dir === 'desc' }" @click="sortBy('category')" aria-label="Sort by category">Category</th>
             <th scope="col" class="text-right">Actions</th>
           </tr>
