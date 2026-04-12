@@ -187,6 +187,7 @@
     .ob-format-preview { font-size: 0.75rem; color: var(--text-muted); }
     .ob-format-match { font-size: 0.75rem; color: var(--emerald-400, #34d399); }
     .ob-format-nomatch { font-size: 0.75rem; color: var(--text-muted); opacity: 0.5; }
+    .ob-auto-badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 20px; background: rgba(16,185,129,0.12); color: var(--emerald-400, #34d399); border: 1px solid rgba(16,185,129,0.2); }
 
     /* Import result */
     .ob-import-result {
@@ -478,9 +479,7 @@
             <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.375rem;flex-wrap:wrap;">
               <span style="font-size:0.75rem;color:var(--text-muted);">Amount format:</span>
               <template x-if="csv.amountModeDetected">
-                <span style="font-size:0.7rem;padding:2px 8px;border-radius:20px;background:rgba(16,185,129,0.12);color:var(--emerald-400,#34d399);border:1px solid rgba(16,185,129,0.2);">
-                  ✓ auto-detected
-                </span>
+                <span class="ob-auto-badge">✓ auto-detected</span>
               </template>
             </div>
             <div class="ob-amount-mode-toggle">
@@ -552,27 +551,57 @@
 
           <!-- Date format -->
           <div>
-            <p style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin:0 0 0.25rem;">Date Format</p>
-            <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 0.5rem;">Select the format your bank uses for dates. Finch auto-detected the best match from your CSV.</p>
-            <div class="ob-format-list">
-              <template x-for="fmt in dateFormats" :key="fmt.value">
-                <button type="button" class="ob-format-option" :class="{ selected: csv.dateFormat === fmt.value }" @click="csv.dateFormat = fmt.value">
-                  <div class="ob-format-dot">
-                    <template x-if="csv.dateFormat === fmt.value">
-                      <div class="ob-format-dot-inner"></div>
-                    </template>
-                  </div>
-                  <span class="ob-format-label" x-text="fmt.hint"></span>
-                  <span class="ob-format-label" style="color:var(--text-muted);font-size:0.75rem;" x-text="fmt.example"></span>
-                  <template x-if="fmt.matchesSample">
-                    <span class="ob-format-match">✓ matches your CSV</span>
-                  </template>
-                  <template x-if="!fmt.matchesSample && csv.sampleDate">
-                    <span class="ob-format-nomatch">no match</span>
-                  </template>
-                </button>
+            <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">
+              <p style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin:0;">Date Format</p>
+              <!-- Auto-detected badge -->
+              <template x-if="csv.dateFormatDetected">
+                <span class="ob-auto-badge">✓ auto-detected</span>
+              </template>
+              <!-- Warning when not detected and a date column is mapped -->
+              <template x-if="!csv.dateFormatDetected && csv.map.date">
+                <span style="font-size:0.7rem;color:var(--rose-400);font-weight:500;">⚠ could not auto-detect — please select below</span>
               </template>
             </div>
+
+            <!-- When detected: show a one-line summary + optional override link -->
+            <template x-if="csv.dateFormatDetected && !csv.showDateFormatPicker">
+              <div style="display:flex;align-items:center;gap:0.75rem;">
+                <span style="font-size:0.8125rem;color:var(--text-primary);" x-text="dateFormats.find(f => f.value === csv.dateFormat)?.hint || csv.dateFormat"></span>
+                <span style="font-size:0.75rem;color:var(--text-muted);" x-text="'e.g. ' + (dateFormats.find(f => f.value === csv.dateFormat)?.example || '')"></span>
+                <button type="button" @click="csv.showDateFormatPicker = true" style="font-size:0.7rem;color:var(--text-muted);background:none;border:none;padding:0;cursor:pointer;text-decoration:underline;text-underline-offset:3px;">change</button>
+              </div>
+            </template>
+
+            <!-- Picker: shown when not detected, or when user clicks "change" -->
+            <template x-if="!csv.dateFormatDetected || csv.showDateFormatPicker">
+              <div>
+                <template x-if="csv.dateFormatDetected">
+                  <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 0.5rem;">Override the detected format:</p>
+                </template>
+                <template x-if="!csv.dateFormatDetected && csv.map.date">
+                  <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 0.5rem;">Select the date format your bank uses:</p>
+                </template>
+                <div class="ob-format-list">
+                  <template x-for="fmt in dateFormats" :key="fmt.value">
+                    <button type="button" class="ob-format-option" :class="{ selected: csv.dateFormat === fmt.value }" @click="csv.dateFormat = fmt.value; csv.showDateFormatPicker = false">
+                      <div class="ob-format-dot">
+                        <template x-if="csv.dateFormat === fmt.value">
+                          <div class="ob-format-dot-inner"></div>
+                        </template>
+                      </div>
+                      <span class="ob-format-label" x-text="fmt.hint"></span>
+                      <span class="ob-format-label" style="color:var(--text-muted);font-size:0.75rem;" x-text="fmt.example"></span>
+                      <template x-if="fmt.matchesSample">
+                        <span class="ob-format-match">✓ matches your CSV</span>
+                      </template>
+                      <template x-if="!fmt.matchesSample && csv.sampleDate">
+                        <span class="ob-format-nomatch">no match</span>
+                      </template>
+                    </button>
+                  </template>
+                </div>
+              </div>
+            </template>
           </div>
 
           <hr class="ob-divider" />
@@ -918,6 +947,8 @@
             balance: null, account_name: null, account_number: null,
           },
           dateFormat: '%d %b %Y',
+          dateFormatDetected: false,   // true when format was auto-detected from data
+          showDateFormatPicker: false, // user can open picker to override
           importing: false,
           importResult: null,
         },
@@ -1178,6 +1209,9 @@
               matched = true;
             }
           });
+          this.csv.dateFormatDetected = matched;
+          // When detection succeeds, collapse the picker (unless already open)
+          if (matched) this.csv.showDateFormatPicker = false;
         },
 
         clearCsv() {
@@ -1191,6 +1225,8 @@
           this.csv.amountMode = 'single';
           this.csv.amountModeDetected = false;
           this.csv.accountName = '';
+          this.csv.dateFormatDetected = false;
+          this.csv.showDateFormatPicker = false;
           this.csv.importResult = null;
           this.showRawCsv = false;
           this.dateFormats.forEach(f => f.matchesSample = false);
