@@ -15,9 +15,10 @@ PGID=${PGID:-1000}
 echo "Starting Finance with UID=${PUID} GID=${PGID}"
 
 # ── Re-map group ──────────────────────────────────────────────────────────────
-# -o / --non-unique allows mapping to an already-existing GID (e.g. when the
-# host GID happens to match another group inside the container).
-if [ "$(id -g appgroup)" != "${PGID}" ]; then
+# getent group returns "name:x:GID:members"; field 3 is the numeric GID.
+# -o / --non-unique allows reusing a GID already owned by another group.
+CURRENT_GID=$(getent group appgroup | cut -d: -f3)
+if [ "${CURRENT_GID}" != "${PGID}" ]; then
     groupmod -o -g "${PGID}" appgroup
 fi
 
@@ -27,9 +28,11 @@ if [ "$(id -u appuser)" != "${PUID}" ]; then
 fi
 
 # ── Fix data directory ownership ──────────────────────────────────────────────
-# Essential on first run against a fresh (empty) volume, and when PUID/PGID
-# differ from the previous run.
-chown -R appuser:appgroup /data
+# Best-effort: requires CAP_CHOWN (add to cap_add in your compose file if
+# needed).  Failures are non-fatal — the app can still run if the mounted
+# volume is already accessible by the mapped UID/GID.
+chown -R appuser:appgroup /data 2>/dev/null || \
+    echo "Warning: could not chown /data (missing CAP_CHOWN?) — continuing anyway"
 
 # ── Drop privileges and exec the CMD ─────────────────────────────────────────
 exec gosu appuser "$@"

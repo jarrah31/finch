@@ -26,7 +26,14 @@ services:
     security_opt:
       - no-new-privileges:true
 
-    # Trim the Linux capability set to the bare minimum uvicorn needs.
+    # The entrypoint runs briefly as root to remap UID/GID and fix /data
+    # ownership, then drops to appuser via gosu.  These three capabilities
+    # are needed for that handoff; they are unavailable to the app process
+    # itself once gosu exec's uvicorn as the non-root appuser.
+    cap_add:
+      - CHOWN      # chown /data to the remapped appuser
+      - SETUID     # gosu / usermod — drop from root to appuser
+      - SETGID     # gosu / groupmod — set the remapped group
     cap_drop:
       - ALL
 
