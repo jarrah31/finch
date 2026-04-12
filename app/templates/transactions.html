@@ -804,6 +804,7 @@
           <col style="width:110px">
           <col><!-- Description: takes remaining space -->
           <col style="width:110px">
+          <col style="width:90px"><!-- Type -->
           <col style="width:160px">
           <col style="width:80px">
         </colgroup>
@@ -812,6 +813,7 @@
             <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'date' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'date' && filters.sort_dir === 'desc' }" @click="sortBy('date')" aria-label="Sort by date">Date</th>
             <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'description' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'description' && filters.sort_dir === 'desc' }" @click="sortBy('description')" aria-label="Sort by description">Description</th>
             <th scope="col" class="sortable text-right" :class="{ 'sort-asc': filters.sort_by === 'amount' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'amount' && filters.sort_dir === 'desc' }" @click="sortBy('amount')" aria-label="Sort by amount">Amount</th>
+            <th scope="col">Type</th>
             <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'category' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'category' && filters.sort_dir === 'desc' }" @click="sortBy('category')" aria-label="Sort by category">Category</th>
             <th scope="col" class="text-right">Actions</th>
           </tr>
@@ -862,6 +864,15 @@
                 <span
                   x-text="formatAmount(tx.amount)"
                   :class="amountClass(tx.amount)"
+                ></span>
+              </td>
+
+              <!-- Type -->
+              <td class="table-cell table-cell--type">
+                <span
+                  x-show="tx.type"
+                  x-text="tx.type"
+                  class="badge badge--type"
                 ></span>
               </td>
 

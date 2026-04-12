@@ -2929,6 +2929,17 @@ select.input,
   color: #fbbf24;
   border: 1px solid rgba(251, 191, 36, 0.2);
 }
+.badge--type {
+  background: var(--bg-overlay);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.table-cell--type {
+  white-space: nowrap;
+}
 
 /* ── Category colour system ─────────────────────────────────────── */
 /* Each top-level category gets a colour token set. Sub-categories
