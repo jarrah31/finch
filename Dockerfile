@@ -50,6 +50,12 @@ ENV PATH="/opt/venv/bin:$PATH"
 WORKDIR /app
 COPY app/ ./app/
 
+# Verify the bundled data package (merchant dictionary, MCC codes) is present.
+# This fails the build immediately if .dockerignore accidentally excluded it.
+RUN test -f /app/app/data/merchant_dictionary.py \
+ && test -f /app/app/data/mcc_codes.json \
+ && echo "✓ app/data package verified"
+
 # ── Logo cache ────────────────────────────────────────────────────────────────
 # logos.py writes cached PNGs to app/static/logos/ at runtime.
 # This is the only sub-directory inside /app that the app user needs to write.
