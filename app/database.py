@@ -74,7 +74,12 @@ CREATE TABLE IF NOT EXISTS categorization_rules (
     comment         TEXT,
     is_subscription     INTEGER NOT NULL DEFAULT 0,
     subscription_period TEXT,
-    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    match_amounts   TEXT,
+    keywords        TEXT,
+    tags            TEXT,
+    exclude_amounts TEXT,
+    exclude_keywords TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_rules_priority ON categorization_rules(priority);
@@ -209,6 +214,21 @@ async def init_db():
             await db.commit()
         except Exception:
             pass
+        # Add exclude_amounts and exclude_keywords columns if missing
+        try:
+            await db.execute(
+                "ALTER TABLE categorization_rules ADD COLUMN exclude_amounts TEXT"
+            )
+            await db.commit()
+        except Exception:
+            pass  # Column already exists
+        try:
+            await db.execute(
+                "ALTER TABLE categorization_rules ADD COLUMN exclude_keywords TEXT"
+            )
+            await db.commit()
+        except Exception:
+            pass  # Column already exists
         # Migrate categories: replace global UNIQUE(name) with per-scope partial indexes
         try:
             old_idx = await db.execute(
