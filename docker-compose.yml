@@ -1,7 +1,7 @@
 services:
-  finance:
-    image: ghcr.io/OWNER/finance:latest   # replace OWNER with your GitHub username
-    # build: .                            # uncomment to build locally instead
+  finch:
+    image: ghcr.io/jarrah31/finch:latest
+    container_name: finch
 
     ports:
       - "8000:8000"
