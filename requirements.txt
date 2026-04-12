@@ -1,5 +1,6 @@
 # Production runtime dependencies — pinned for reproducible Docker builds.
-# Update versions here when upgrading; keep in sync with pyproject.toml.
+# Versions are exact (==) so Docker images are always built with known-good packages.
+# To upgrade: test locally first, update both this file and pyproject.toml, then release.
 fastapi==0.135.1
 uvicorn[standard]==0.42.0
 aiosqlite==0.22.1
