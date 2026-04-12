@@ -151,8 +151,9 @@
 
     openCategoryFilter(btn) {
       const rect = btn.getBoundingClientRect();
+      const popupW = 260;
       this.categoryPopup.top = rect.bottom + 4;
-      this.categoryPopup.left = rect.left;
+      this.categoryPopup.left = Math.max(8, Math.min(rect.left, window.innerWidth - popupW - 8));
       this.categoryPopup.open = !this.categoryPopup.open;
       this.categoryPopup.search = '';
       if (this.categoryPopup.open) this.typePopup.open = false;
@@ -160,8 +161,9 @@
 
     openTypeFilter(btn) {
       const rect = btn.getBoundingClientRect();
+      const popupW = 200;
       this.typePopup.top = rect.bottom + 4;
-      this.typePopup.left = rect.left;
+      this.typePopup.left = Math.max(8, Math.min(rect.left, window.innerWidth - popupW - 8));
       this.typePopup.open = !this.typePopup.open;
       if (this.typePopup.open) this.categoryPopup.open = false;
     },
