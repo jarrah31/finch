@@ -1,0 +1,1253 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Setup — Finch</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/app.css" />
+  <script>(function(){var t=localStorage.getItem('theme')||'dark';document.documentElement.setAttribute('data-theme',t);})();</script>
+  <style>
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      background: var(--bg-base);
+      padding: 2rem 1rem 4rem;
+    }
+
+    .ob-logo {
+      display: flex;
+      align-items: center;
+      gap: 0.625rem;
+      margin-bottom: 2rem;
+    }
+    .ob-logo-icon {
+      width: 34px; height: 34px;
+      background: var(--emerald-500, #10b981);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .ob-logo-text {
+      font-size: 1.25rem; font-weight: 700;
+      color: var(--text-primary); letter-spacing: -0.02em;
+    }
+    .ob-logo-text span { color: var(--emerald-400, #34d399); }
+
+    /* Progress bar */
+    .ob-progress {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 2rem;
+      width: 100%;
+      max-width: 640px;
+    }
+    .ob-step-dot {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      flex: 1;
+      position: relative;
+    }
+    .ob-step-dot::before {
+      content: '';
+      position: absolute;
+      top: 14px; right: 50%; left: -50%;
+      height: 2px;
+      background: var(--border-subtle);
+      z-index: 0;
+    }
+    .ob-step-dot:first-child::before { display: none; }
+    .ob-step-dot.done::before { background: var(--emerald-500, #10b981); }
+    .ob-step-dot.active::before { background: var(--emerald-500, #10b981); }
+
+    .ob-dot-circle {
+      width: 28px; height: 28px; border-radius: 50%;
+      border: 2px solid var(--border-default);
+      background: var(--bg-card);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 600;
+      color: var(--text-muted);
+      position: relative; z-index: 1;
+      flex-shrink: 0;
+      transition: background 0.2s, border-color 0.2s;
+    }
+    .ob-step-dot.done .ob-dot-circle {
+      background: var(--emerald-500, #10b981);
+      border-color: var(--emerald-500, #10b981);
+      color: white;
+    }
+    .ob-step-dot.active .ob-dot-circle {
+      border-color: var(--emerald-400, #34d399);
+      color: var(--emerald-400, #34d399);
+    }
+    .ob-dot-label {
+      font-size: 10px; color: var(--text-muted); white-space: nowrap;
+      display: none;
+    }
+    @media (min-width: 520px) { .ob-dot-label { display: block; } }
+
+    /* Card */
+    .ob-card {
+      width: 100%;
+      max-width: 640px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 2rem;
+    }
+
+    .ob-step-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 1.25rem;
+    }
+    .ob-step-icon svg { width: 22px; height: 22px; }
+    .ob-step-icon.emerald { background: rgba(16,185,129,0.12); color: var(--emerald-400, #34d399); }
+    .ob-step-icon.blue    { background: rgba(59,130,246,0.12);  color: #60a5fa; }
+    .ob-step-icon.purple  { background: rgba(139,92,246,0.12);  color: #a78bfa; }
+    .ob-step-icon.amber   { background: rgba(245,158,11,0.12);  color: #fbbf24; }
+    .ob-step-icon.rose    { background: rgba(244,63,94,0.12);   color: #fb7185; }
+
+    .ob-step-title {
+      font-size: 1.25rem; font-weight: 700;
+      color: var(--text-primary); margin: 0 0 0.375rem;
+    }
+    .ob-step-sub {
+      font-size: 0.875rem; color: var(--text-muted);
+      margin: 0 0 1.75rem; line-height: 1.55;
+    }
+
+    .ob-actions {
+      display: flex; gap: 0.75rem; margin-top: 2rem;
+      align-items: center; flex-wrap: wrap;
+    }
+    .ob-actions .spacer { flex: 1; }
+    .ob-skip-link {
+      font-size: 0.8125rem; color: var(--text-muted);
+      text-decoration: underline; cursor: pointer;
+      background: none; border: none; padding: 0;
+    }
+    .ob-skip-link:hover { color: var(--text-secondary); }
+
+    /* Upload zone */
+    .ob-upload-zone {
+      border: 2px dashed var(--border-default);
+      border-radius: 10px;
+      padding: 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .ob-upload-zone:hover { border-color: var(--emerald-400, #34d399); background: rgba(16,185,129,0.04); }
+    .ob-upload-zone.has-file { border-color: var(--emerald-500, #10b981); background: rgba(16,185,129,0.06); }
+
+    .ob-upload-icon { color: var(--text-muted); margin-bottom: 0.5rem; }
+    .ob-upload-text { font-size: 0.875rem; color: var(--text-secondary); }
+    .ob-upload-hint { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
+
+    /* Column mapping grid */
+    .ob-mapping-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 0.875rem;
+      margin-top: 1.25rem;
+    }
+
+    /* Date format list */
+    .ob-format-list {
+      display: flex; flex-direction: column; gap: 0.375rem;
+      margin-top: 0.75rem;
+    }
+    .ob-format-option {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.625rem 0.875rem;
+      border-radius: 8px; border: 1px solid var(--border-subtle);
+      cursor: pointer; transition: border-color 0.15s, background 0.15s;
+      background: none;
+      text-align: left; width: 100%;
+    }
+    .ob-format-option:hover { border-color: var(--border-default); background: var(--bg-overlay); }
+    .ob-format-option.selected { border-color: var(--emerald-500, #10b981); background: rgba(16,185,129,0.06); }
+    .ob-format-dot {
+      width: 16px; height: 16px; border-radius: 50%;
+      border: 2px solid var(--border-default); flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.15s;
+    }
+    .ob-format-option.selected .ob-format-dot { border-color: var(--emerald-500, #10b981); }
+    .ob-format-dot-inner {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--emerald-500, #10b981);
+    }
+    .ob-format-label { font-size: 0.875rem; color: var(--text-primary); font-family: monospace; flex: 1; }
+    .ob-format-preview { font-size: 0.75rem; color: var(--text-muted); }
+    .ob-format-match { font-size: 0.75rem; color: var(--emerald-400, #34d399); }
+    .ob-format-nomatch { font-size: 0.75rem; color: var(--text-muted); opacity: 0.5; }
+
+    /* Import result */
+    .ob-import-result {
+      display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem;
+    }
+    .ob-result-pill {
+      display: flex; align-items: center; gap: 0.375rem;
+      padding: 0.375rem 0.75rem; border-radius: 20px;
+      font-size: 0.8125rem; font-weight: 500;
+    }
+    .ob-result-pill.green { background: rgba(16,185,129,0.12); color: var(--emerald-400, #34d399); }
+    .ob-result-pill.muted { background: var(--bg-overlay); color: var(--text-muted); }
+    .ob-result-pill.rose  { background: rgba(244,63,94,0.1);  color: #fb7185; }
+
+    /* Payday cards */
+    .ob-item-list {
+      display: flex; flex-direction: column; gap: 0.375rem;
+      max-height: 320px; overflow-y: auto;
+      border: 1px solid var(--border-subtle); border-radius: 10px;
+    }
+    .ob-item-card {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      cursor: pointer; border: none; background: none;
+      text-align: left; width: 100%;
+      border-bottom: 1px solid var(--border-subtle);
+      transition: background 0.1s;
+    }
+    .ob-item-card:last-child { border-bottom: none; }
+    .ob-item-card:hover { background: var(--bg-overlay); }
+    .ob-item-card.selected { background: rgba(16,185,129,0.07); }
+    .ob-item-check {
+      width: 18px; height: 18px; border-radius: 50%;
+      border: 2px solid var(--border-default); flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .ob-item-card.selected .ob-item-check {
+      background: var(--emerald-500, #10b981);
+      border-color: var(--emerald-500, #10b981);
+    }
+    .ob-item-card.checked .ob-item-check {
+      background: var(--emerald-500, #10b981);
+      border-color: var(--emerald-500, #10b981);
+    }
+    .ob-item-desc {
+      flex: 1; font-size: 0.8125rem; color: var(--text-primary);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .ob-item-meta {
+      display: flex; flex-direction: column; align-items: flex-end;
+      gap: 2px; flex-shrink: 0;
+    }
+    .ob-item-count { font-size: 0.75rem; color: var(--text-muted); }
+    .ob-item-dates { font-size: 0.7rem; color: var(--text-muted); opacity: 0.7; }
+
+    /* Keyword edit input */
+    .ob-keyword-wrap {
+      margin-top: 1rem;
+    }
+    .ob-keyword-hint {
+      font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem;
+    }
+
+    /* Logo.dev info box */
+    .ob-info-box {
+      background: var(--bg-overlay);
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 1rem 1.125rem;
+      margin-bottom: 1.5rem;
+    }
+    .ob-info-box p { font-size: 0.875rem; color: var(--text-secondary); margin: 0 0 0.5rem; line-height: 1.55; }
+    .ob-info-box p:last-child { margin: 0; }
+    .ob-info-box a { color: var(--emerald-400, #34d399); }
+
+    /* Summary list */
+    .ob-summary-list {
+      display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.75rem;
+    }
+    .ob-summary-row {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.625rem 0.875rem;
+      border-radius: 8px;
+      background: var(--bg-overlay);
+    }
+    .ob-summary-icon { width: 20px; height: 20px; flex-shrink: 0; }
+    .ob-summary-label { font-size: 0.875rem; color: var(--text-secondary); flex: 1; }
+    .ob-summary-value { font-size: 0.8125rem; font-weight: 600; color: var(--text-primary); }
+    .ob-summary-value.muted { color: var(--text-muted); font-weight: 400; }
+
+    /* Section divider */
+    .ob-divider {
+      border: none; border-top: 1px solid var(--border-subtle);
+      margin: 1.5rem 0;
+    }
+
+    .ob-empty {
+      padding: 2rem; text-align: center;
+      font-size: 0.875rem; color: var(--text-muted);
+    }
+
+    .ob-amount-mode-toggle {
+      display: flex; gap: 0.5rem; margin-bottom: 0.75rem;
+    }
+    .ob-mode-btn {
+      flex: 1; padding: 0.5rem; border-radius: 7px; font-size: 0.8125rem;
+      border: 1px solid var(--border-subtle); background: none;
+      color: var(--text-secondary); cursor: pointer; font-weight: 500;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .ob-mode-btn.active {
+      border-color: var(--emerald-500, #10b981);
+      background: rgba(16,185,129,0.08);
+      color: var(--emerald-400, #34d399);
+    }
+
+    .skip-all-wrap {
+      text-align: center; margin-top: 1.5rem;
+    }
+  </style>
+</head>
+<body x-data="onboardingWizard()" x-init="init()">
+
+  <!-- Logo -->
+  <div class="ob-logo">
+    <div class="ob-logo-icon" aria-hidden="true">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
+        <path d="M9 12h6M12 9v6"/>
+      </svg>
+    </div>
+    <span class="ob-logo-text">Fin<span>ch</span></span>
+  </div>
+
+  <!-- Progress -->
+  <div class="ob-progress" role="list" aria-label="Setup progress">
+    <template x-for="(s, i) in steps" :key="i">
+      <div
+        class="ob-step-dot"
+        :class="{ done: step > i + 1, active: step === i + 1 }"
+        role="listitem"
+        :aria-current="step === i + 1 ? 'step' : undefined"
+      >
+        <div class="ob-dot-circle">
+          <template x-if="step > i + 1">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          </template>
+          <template x-if="step <= i + 1">
+            <span x-text="i + 1"></span>
+          </template>
+        </div>
+        <span class="ob-dot-label" x-text="s.label"></span>
+      </div>
+    </template>
+  </div>
+
+  <!-- Card -->
+  <div class="ob-card">
+
+    <!-- ================================================================
+         STEP 1 — Welcome
+         ================================================================ -->
+    <div x-show="step === 1">
+      <div class="ob-step-icon emerald">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+        </svg>
+      </div>
+      <h1 class="ob-step-title">Welcome to Finch</h1>
+      <p class="ob-step-sub">
+        This quick setup wizard will help you configure everything you need to get started.
+        We'll import your first bank CSV, match up the column headers, identify your pay day,
+        and optionally set up merchant logo enrichment.
+      </p>
+
+      <p class="ob-step-sub" style="margin-top: -0.75rem;">
+        The whole process takes about two minutes and you can skip any step at any time.
+      </p>
+
+      <div class="ob-actions">
+        <button class="btn btn-primary" @click="step = 2">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          Let's go
+        </button>
+        <button class="ob-skip-link" @click="skipAll()">Skip setup, go straight to the app</button>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         STEP 2 — CSV import
+         ================================================================ -->
+    <div x-show="step === 2">
+      <div class="ob-step-icon blue">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+      </div>
+      <h2 class="ob-step-title">Import your bank CSV</h2>
+      <p class="ob-step-sub">
+        Upload a CSV export from your bank. Finch will detect the column headers and help you
+        map them to the right fields.
+      </p>
+
+      <!-- Upload zone — hidden after file chosen -->
+      <template x-if="!csv.fileName">
+        <div>
+          <div
+            class="ob-upload-zone"
+            @click="$refs.csvFile.click()"
+            @dragover.prevent
+            @drop.prevent="handleFileDrop($event)"
+            role="button"
+            tabindex="0"
+            @keydown.enter="$refs.csvFile.click()"
+          >
+            <div class="ob-upload-icon">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+            </div>
+            <p class="ob-upload-text">Click to upload, or drag &amp; drop a CSV file</p>
+            <p class="ob-upload-hint">Exported from your bank — transactions only, no sensitive data is sent externally</p>
+          </div>
+          <input type="file" accept=".csv,text/csv" x-ref="csvFile" style="display:none" @change="onCsvFile($event)" />
+        </div>
+      </template>
+
+      <!-- After file loaded -->
+      <template x-if="csv.fileName">
+        <div>
+          <!-- File badge -->
+          <div style="display:flex;align-items:center;gap:0.625rem;padding:0.625rem 0.875rem;border-radius:8px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);margin-bottom:1.25rem;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--emerald-400,#34d399)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            <span style="font-size:0.8125rem;color:var(--emerald-400,#34d399);flex:1;" x-text="csv.fileName"></span>
+            <button type="button" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.75rem;padding:0;" @click="clearCsv()">✕ Change</button>
+          </div>
+
+          <!-- Column mapping -->
+          <div style="margin-bottom:1.25rem;">
+            <p style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin:0 0 0.375rem;">
+              Column Mapping
+              <span style="font-size:0.75rem;font-weight:400;color:var(--text-muted);margin-left:0.5rem;">
+                Detected <span x-text="csv.detectedHeaders.length"></span> column(s)
+              </span>
+            </p>
+            <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 0.75rem;">Map your bank's CSV headers to the fields Finch expects.</p>
+
+            <!-- Amount mode toggle -->
+            <div class="ob-amount-mode-toggle">
+              <button type="button" class="ob-mode-btn" :class="{ active: csv.amountMode === 'single' }" @click="csv.amountMode = 'single'">Single amount column</button>
+              <button type="button" class="ob-mode-btn" :class="{ active: csv.amountMode === 'split' }" @click="csv.amountMode = 'split'">Separate debit &amp; credit columns</button>
+            </div>
+
+            <div class="ob-mapping-grid">
+              <!-- Date (required) -->
+              <div class="form-group">
+                <label class="form-label">Date <span style="color:var(--rose-400);font-size:var(--text-xs);">required</span></label>
+                <select class="input" x-model="csv.map.date" @change="onDateColumnChange()">
+                  <option value="">— select column —</option>
+                  <template x-for="h in csv.detectedHeaders" :key="h"><option :value="h" x-text="h"></option></template>
+                </select>
+              </div>
+
+              <!-- Description (required) -->
+              <div class="form-group">
+                <label class="form-label">Description <span style="color:var(--rose-400);font-size:var(--text-xs);">required</span></label>
+                <select class="input" x-model="csv.map.description">
+                  <option value="">— select column —</option>
+                  <template x-for="h in csv.detectedHeaders" :key="h"><option :value="h" x-text="h"></option></template>
+                </select>
+              </div>
+
+              <!-- Amount (single) -->
+              <div class="form-group" x-show="csv.amountMode === 'single'">
+                <label class="form-label">Amount <span style="color:var(--rose-400);font-size:var(--text-xs);">required</span></label>
+                <select class="input" x-model="csv.map.amount">
+                  <option value="">— select column —</option>
+                  <template x-for="h in csv.detectedHeaders" :key="h"><option :value="h" x-text="h"></option></template>
+                </select>
+                <p class="form-hint">Negative = debit, positive = credit.</p>
+              </div>
+
+              <!-- Debit (split) -->
+              <div class="form-group" x-show="csv.amountMode === 'split'">
+                <label class="form-label">Debit column <span style="color:var(--text-muted);font-size:var(--text-xs);">money out</span></label>
+                <select class="input" x-model="csv.map.debit">
+                  <option value="">— not present —</option>
+                  <template x-for="h in csv.detectedHeaders" :key="h"><option :value="h" x-text="h"></option></template>
+                </select>
+              </div>
+
+              <!-- Credit (split) -->
+              <div class="form-group" x-show="csv.amountMode === 'split'">
+                <label class="form-label">Credit column <span style="color:var(--text-muted);font-size:var(--text-xs);">money in</span></label>
+                <select class="input" x-model="csv.map.credit">
+                  <option value="">— not present —</option>
+                  <template x-for="h in csv.detectedHeaders" :key="h"><option :value="h" x-text="h"></option></template>
+                </select>
+              </div>
+
+              <!-- Balance (optional) -->
+              <div class="form-group">
+                <label class="form-label">Balance <span style="color:var(--text-muted);font-size:var(--text-xs);">optional</span></label>
+                <select class="input" x-model="csv.map.balance">
+                  <option value="">— not in CSV —</option>
+                  <template x-for="h in csv.detectedHeaders" :key="h"><option :value="h" x-text="h"></option></template>
+                </select>
+              </div>
+
+              <!-- Type (optional) -->
+              <div class="form-group">
+                <label class="form-label">Transaction Type <span style="color:var(--text-muted);font-size:var(--text-xs);">optional</span></label>
+                <select class="input" x-model="csv.map.type">
+                  <option value="">— not in CSV —</option>
+                  <template x-for="h in csv.detectedHeaders" :key="h"><option :value="h" x-text="h"></option></template>
+                </select>
+              </div>
+
+              <!-- Account Name (optional) -->
+              <div class="form-group">
+                <label class="form-label">Account Name <span style="color:var(--text-muted);font-size:var(--text-xs);">optional</span></label>
+                <select class="input" x-model="csv.map.account_name">
+                  <option value="">— not in CSV —</option>
+                  <template x-for="h in csv.detectedHeaders" :key="h"><option :value="h" x-text="h"></option></template>
+                </select>
+              </div>
+
+              <!-- Account Number (optional) -->
+              <div class="form-group">
+                <label class="form-label">Account Number <span style="color:var(--text-muted);font-size:var(--text-xs);">optional</span></label>
+                <select class="input" x-model="csv.map.account_number">
+                  <option value="">— not in CSV —</option>
+                  <template x-for="h in csv.detectedHeaders" :key="h"><option :value="h" x-text="h"></option></template>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <hr class="ob-divider" />
+
+          <!-- Date format -->
+          <div>
+            <p style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin:0 0 0.25rem;">Date Format</p>
+            <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 0.5rem;">Select the format your bank uses for dates. Finch auto-detected the best match from your CSV.</p>
+            <div class="ob-format-list">
+              <template x-for="fmt in dateFormats" :key="fmt.value">
+                <button type="button" class="ob-format-option" :class="{ selected: csv.dateFormat === fmt.value }" @click="csv.dateFormat = fmt.value">
+                  <div class="ob-format-dot">
+                    <template x-if="csv.dateFormat === fmt.value">
+                      <div class="ob-format-dot-inner"></div>
+                    </template>
+                  </div>
+                  <span class="ob-format-label" x-text="fmt.hint"></span>
+                  <span class="ob-format-label" style="color:var(--text-muted);font-size:0.75rem;" x-text="fmt.example"></span>
+                  <template x-if="fmt.matchesSample">
+                    <span class="ob-format-match">✓ matches your CSV</span>
+                  </template>
+                  <template x-if="!fmt.matchesSample && csv.sampleDate">
+                    <span class="ob-format-nomatch">no match</span>
+                  </template>
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <hr class="ob-divider" />
+
+          <!-- Import result -->
+          <template x-if="csv.importResult">
+            <div>
+              <p style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin:0 0 0.5rem;">Import Complete</p>
+              <div class="ob-import-result">
+                <div class="ob-result-pill green">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span x-text="csv.importResult.inserted + ' imported'"></span>
+                </div>
+                <template x-if="csv.importResult.skipped > 0">
+                  <div class="ob-result-pill muted">
+                    <span x-text="csv.importResult.skipped + ' skipped (duplicates)'"></span>
+                  </div>
+                </template>
+                <template x-if="csv.importResult.errors && csv.importResult.errors.length > 0">
+                  <div class="ob-result-pill rose">
+                    <span x-text="csv.importResult.errors.length + ' error(s)'"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+
+          <div class="ob-actions">
+            <template x-if="!csv.importResult">
+              <button class="btn btn-primary" :class="{ loading: csv.importing }" :disabled="csv.importing || !canImport()" @click="doImport()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <span x-text="csv.importing ? 'Importing…' : 'Import Transactions'"></span>
+              </button>
+            </template>
+            <template x-if="csv.importResult">
+              <button class="btn btn-primary" @click="step = 3; loadPositiveDescriptions()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                Next
+              </button>
+            </template>
+            <div class="spacer"></div>
+            <button class="ob-skip-link" @click="step = 3; loadPositiveDescriptions()">Skip this step</button>
+          </div>
+        </div>
+      </template>
+
+      <!-- No file yet — skip link only -->
+      <template x-if="!csv.fileName">
+        <div class="ob-actions" style="margin-top:1rem;">
+          <div class="spacer"></div>
+          <button class="ob-skip-link" @click="step = 3; loadPositiveDescriptions()">Skip, I'll import later</button>
+        </div>
+      </template>
+    </div>
+
+    <!-- ================================================================
+         STEP 3 — Identify Pay Day keyword
+         ================================================================ -->
+    <div x-show="step === 3">
+      <div class="ob-step-icon emerald">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+        </svg>
+      </div>
+      <h2 class="ob-step-title">Identify your pay day</h2>
+      <p class="ob-step-sub">
+        Finch uses a keyword from your salary or main income transaction to detect pay periods.
+        Click on the transaction that represents your pay day — then trim the keyword if needed.
+      </p>
+
+      <!-- Loading -->
+      <template x-if="paydayLoading">
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:1rem;color:var(--text-muted);font-size:0.875rem;">
+          <div class="spinner" style="width:16px;height:16px;"></div>
+          Loading transactions…
+        </div>
+      </template>
+
+      <!-- Empty state -->
+      <template x-if="!paydayLoading && paydayItems.length === 0">
+        <div class="ob-empty">
+          <p>No income transactions found in the imported data.</p>
+          <p style="font-size:0.75rem;margin-top:0.25rem;">You can set this later in Settings → Income.</p>
+        </div>
+      </template>
+
+      <!-- List -->
+      <template x-if="!paydayLoading && paydayItems.length > 0">
+        <div>
+          <div class="ob-item-list">
+            <template x-for="item in paydayItems" :key="item.description">
+              <button
+                type="button"
+                class="ob-item-card"
+                :class="{ selected: paydaySelected === item.description }"
+                @click="selectPayday(item.description)"
+              >
+                <div class="ob-item-check">
+                  <template x-if="paydaySelected === item.description">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  </template>
+                </div>
+                <span class="ob-item-desc" x-text="item.description"></span>
+                <div class="ob-item-meta">
+                  <span class="ob-item-count" x-text="item.tx_count + 'x'"></span>
+                  <span class="ob-item-dates" x-text="formatDateRange(item.min_date, item.max_date)"></span>
+                </div>
+              </button>
+            </template>
+          </div>
+
+          <!-- Editable keyword input -->
+          <div class="ob-keyword-wrap">
+            <p class="ob-keyword-hint">Edit the keyword if needed — Finch matches transactions that <em>contain</em> this text:</p>
+            <input
+              type="text"
+              class="input"
+              x-model="paydayKeyword"
+              placeholder="e.g. SALARY, PAYROLL, BACS"
+              style="font-family:monospace;"
+            />
+          </div>
+        </div>
+      </template>
+
+      <div class="ob-actions" style="margin-top: 1.5rem;">
+        <button class="btn btn-secondary" @click="step = 2">Back</button>
+        <button
+          class="btn btn-primary"
+          :disabled="paydayLoading || saving"
+          :class="{ loading: saving }"
+          @click="savePayday()"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          <span x-text="paydayKeyword ? 'Save &amp; Next' : 'Skip'"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         STEP 4 — Additional income keywords
+         ================================================================ -->
+    <div x-show="step === 4">
+      <div class="ob-step-icon purple">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+          <line x1="7" y1="7" x2="7.01" y2="7"/>
+        </svg>
+      </div>
+      <h2 class="ob-step-title">Other income sources</h2>
+      <p class="ob-step-sub">
+        Select any other transactions that represent income — dividends, freelance payments,
+        benefits, refunds, etc. These won't be counted as spending.
+        Tick as many as apply, or skip if your pay day keyword covers everything.
+      </p>
+
+      <!-- Loading -->
+      <template x-if="paydayLoading">
+        <div style="display:flex;align-items:center;gap:0.5rem;padding:1rem;color:var(--text-muted);font-size:0.875rem;">
+          <div class="spinner" style="width:16px;height:16px;"></div>
+          Loading…
+        </div>
+      </template>
+
+      <!-- Empty state -->
+      <template x-if="!paydayLoading && incomeItems.length === 0">
+        <div class="ob-empty">
+          <p>No other positive transactions found.</p>
+        </div>
+      </template>
+
+      <!-- List -->
+      <template x-if="!paydayLoading && incomeItems.length > 0">
+        <div class="ob-item-list">
+          <template x-for="item in incomeItems" :key="item.description">
+            <button
+              type="button"
+              class="ob-item-card"
+              :class="{ checked: incomeSelected.includes(item.description) }"
+              @click="toggleIncome(item.description)"
+            >
+              <div class="ob-item-check">
+                <template x-if="incomeSelected.includes(item.description)">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </template>
+              </div>
+              <span class="ob-item-desc" x-text="item.description"></span>
+              <div class="ob-item-meta">
+                <span class="ob-item-count" x-text="item.tx_count + 'x'"></span>
+                <span class="ob-item-dates" x-text="formatDateRange(item.min_date, item.max_date)"></span>
+              </div>
+            </button>
+          </template>
+        </div>
+      </template>
+
+      <div class="ob-actions" style="margin-top:1.5rem;">
+        <button class="btn btn-secondary" @click="step = 3">Back</button>
+        <button
+          class="btn btn-primary"
+          :disabled="saving"
+          :class="{ loading: saving }"
+          @click="saveIncomeKeywords()"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          <span x-text="incomeSelected.length > 0 ? 'Save &amp; Next' : 'Skip'"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         STEP 5 — Merchant enrichment
+         ================================================================ -->
+    <div x-show="step === 5">
+      <div class="ob-step-icon amber">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+      </div>
+      <h2 class="ob-step-title">Merchant logos</h2>
+      <p class="ob-step-sub">
+        Finch can show merchant logos next to your transactions using the
+        <a href="https://logo.dev" target="_blank" rel="noopener">logo.dev</a> API.
+        This is optional — you can configure it later in Settings.
+      </p>
+
+      <div class="ob-info-box">
+        <p>Create a free account at <a href="https://logo.dev" target="_blank" rel="noopener">logo.dev</a> to get your API keys. The publishable key is used to display logos; the secret key enables brand search.</p>
+        <p>Keys are stored locally in your Finch database and never sent to any third party other than logo.dev.</p>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:0.875rem;">
+        <div class="form-group">
+          <label class="form-label">Publishable Key <span style="color:var(--text-muted);font-size:var(--text-xs);">starts with pk_</span></label>
+          <input type="text" class="input" x-model="logodevPk" placeholder="pk_…" autocomplete="off" spellcheck="false" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Secret Key <span style="color:var(--text-muted);font-size:var(--text-xs);">starts with sk_</span></label>
+          <input type="password" class="input" x-model="logodevSk" placeholder="sk_…" autocomplete="off" />
+        </div>
+      </div>
+
+      <div class="ob-actions">
+        <button class="btn btn-secondary" @click="step = 4">Back</button>
+        <template x-if="logodevPk || logodevSk">
+          <button class="btn btn-primary" :disabled="logodevSaving" :class="{ loading: logodevSaving }" @click="saveLogodev()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            <span x-text="logodevSaving ? 'Saving…' : 'Save Keys &amp; Next'"></span>
+          </button>
+        </template>
+        <div class="spacer"></div>
+        <button class="ob-skip-link" @click="step = 6; buildSummary()">Skip for now</button>
+      </div>
+    </div>
+
+    <!-- ================================================================
+         STEP 6 — Done
+         ================================================================ -->
+    <div x-show="step === 6">
+      <div class="ob-step-icon emerald">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+      </div>
+      <h2 class="ob-step-title">You're all set!</h2>
+      <p class="ob-step-sub">Here's a summary of what was configured. You can change any of these at any time in Settings.</p>
+
+      <div class="ob-summary-list">
+        <div class="ob-summary-row">
+          <svg class="ob-summary-icon" viewBox="0 0 24 24" fill="none" stroke="var(--emerald-400,#34d399)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <span class="ob-summary-label">Transactions imported</span>
+          <span class="ob-summary-value" x-text="summary.inserted > 0 ? summary.inserted + ' transactions' : 'Skipped'"></span>
+        </div>
+        <div class="ob-summary-row">
+          <svg class="ob-summary-icon" viewBox="0 0 24 24" fill="none" stroke="var(--emerald-400,#34d399)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          <span class="ob-summary-label">Pay day keyword</span>
+          <template x-if="summary.paydayKeyword">
+            <span class="ob-summary-value" style="font-family:monospace;" x-text="summary.paydayKeyword"></span>
+          </template>
+          <template x-if="!summary.paydayKeyword">
+            <span class="ob-summary-value muted">Not set</span>
+          </template>
+        </div>
+        <div class="ob-summary-row">
+          <svg class="ob-summary-icon" viewBox="0 0 24 24" fill="none" stroke="var(--emerald-400,#34d399)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+          <span class="ob-summary-label">Additional income keywords</span>
+          <span class="ob-summary-value" x-text="summary.incomeCount > 0 ? summary.incomeCount + ' keyword(s)' : 'None'"></span>
+        </div>
+        <div class="ob-summary-row">
+          <svg class="ob-summary-icon" viewBox="0 0 24 24" fill="none" stroke="var(--emerald-400,#34d399)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          <span class="ob-summary-label">Merchant logos (logo.dev)</span>
+          <span class="ob-summary-value" x-text="summary.logodevConfigured ? 'Configured' : 'Skipped'"></span>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" style="width:100%;justify-content:center;" :disabled="saving" :class="{ loading: saving }" @click="finish()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:15px;height:15px;"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        Go to Dashboard
+      </button>
+    </div>
+
+  </div><!-- /ob-card -->
+
+  <!-- Skip all — shown on steps 2–5 -->
+  <template x-if="step >= 2 && step <= 5">
+    <div class="skip-all-wrap">
+      <button class="ob-skip-link" @click="skipAll()">Skip all setup and go to the app</button>
+    </div>
+  </template>
+
+  <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  <script>
+    function onboardingWizard() {
+      return {
+        step: 1,
+        saving: false,
+
+        steps: [
+          { label: 'Welcome' },
+          { label: 'Import' },
+          { label: 'Pay Day' },
+          { label: 'Income' },
+          { label: 'Logos' },
+          { label: 'Done' },
+        ],
+
+        // Step 2 — CSV
+        csv: {
+          file: null,
+          fileName: '',
+          rawContent: '',
+          detectedHeaders: [],
+          sampleDate: '',   // first date value from data rows
+          amountMode: 'single',
+          map: {
+            date: null, description: null, amount: null,
+            debit: null, credit: null, type: null,
+            balance: null, account_name: null, account_number: null,
+          },
+          dateFormat: '%d %b %Y',
+          importing: false,
+          importResult: null,
+        },
+
+        dateFormats: [
+          { value: '%d %b %Y',  hint: 'DD Mon YYYY', example: '24 Mar 2026', matchesSample: false },
+          { value: '%d/%m/%Y',  hint: 'DD/MM/YYYY',  example: '24/03/2026',  matchesSample: false },
+          { value: '%d-%m-%Y',  hint: 'DD-MM-YYYY',  example: '24-03-2026',  matchesSample: false },
+          { value: '%Y-%m-%d',  hint: 'YYYY-MM-DD',  example: '2026-03-24',  matchesSample: false },
+          { value: '%d/%m/%y',  hint: 'DD/MM/YY',    example: '24/03/26',    matchesSample: false },
+          { value: '%d %B %Y',  hint: 'DD Month YYYY', example: '24 March 2026', matchesSample: false },
+        ],
+
+        // Step 3 — Payday
+        paydayLoading: false,
+        paydayItems: [],
+        paydaySelected: null,
+        paydayKeyword: '',
+
+        // Step 4 — Income keywords
+        incomeSelected: [],
+
+        // Computed: items for step 4 (excludes payday keyword)
+        get incomeItems() {
+          return this.paydayItems.filter(i => i.description !== this.paydayKeyword);
+        },
+
+        // Step 5 — Merchant enrichment
+        logodevPk: '',
+        logodevSk: '',
+        logodevSaving: false,
+
+        // Step 6 — Summary
+        summary: { inserted: 0, paydayKeyword: '', incomeCount: 0, logodevConfigured: false },
+
+        init() {
+          // nothing to pre-load
+        },
+
+        // ── Helpers ────────────────────────────────────────────────────────
+
+        formatDateRange(min, max) {
+          const fmt = d => {
+            if (!d) return '';
+            const [y, m] = d.split('-');
+            return new Date(+y, +m - 1).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+          };
+          const a = fmt(min), b = fmt(max);
+          return a === b ? a : (a + '–' + b);
+        },
+
+        canImport() {
+          const m = this.csv.map;
+          const hasDate = !!m.date;
+          const hasDesc = !!m.description;
+          const hasAmount = this.csv.amountMode === 'single'
+            ? !!m.amount
+            : !!(m.debit || m.credit);
+          return hasDate && hasDesc && hasAmount;
+        },
+
+        // ── CSV parsing ────────────────────────────────────────────────────
+
+        parseCSVLine(line) {
+          const fields = [];
+          let cur = '', inQ = false;
+          for (const ch of line) {
+            if (ch === '"') { inQ = !inQ; }
+            else if (ch === ',' && !inQ) { fields.push(cur.trim()); cur = ''; }
+            else { cur += ch; }
+          }
+          fields.push(cur.trim());
+          return fields;
+        },
+
+        tryParseDate(dateStr, format) {
+          if (!dateStr) return false;
+          const months_a = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+          const months_f = { january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12 };
+          const s = dateStr.trim();
+          let m;
+          if (format === '%d %b %Y') {
+            m = s.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+            return !!(m && months_a[m[2].toLowerCase()]);
+          }
+          if (format === '%d/%m/%Y') { return !!(s.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)); }
+          if (format === '%d-%m-%Y') { return !!(s.match(/^\d{1,2}-\d{1,2}-\d{4}$/)); }
+          if (format === '%Y-%m-%d') { return !!(s.match(/^\d{4}-\d{2}-\d{2}$/)); }
+          if (format === '%d/%m/%y') { return !!(s.match(/^\d{1,2}\/\d{1,2}\/\d{2}$/)); }
+          if (format === '%d %B %Y') {
+            m = s.match(/^(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/);
+            return !!(m && months_f[m[2].toLowerCase()]);
+          }
+          return false;
+        },
+
+        handleFileDrop(event) {
+          const file = event.dataTransfer.files?.[0];
+          if (file) this.processFile(file);
+        },
+
+        onCsvFile(event) {
+          const file = event.target.files?.[0];
+          if (file) this.processFile(file);
+          event.target.value = '';
+        },
+
+        processFile(file) {
+          this.csv.file = file;
+          this.csv.fileName = file.name;
+          this.csv.importResult = null;
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const text = e.target.result || '';
+            this.csv.rawContent = text;
+            const lines = text.split(/\r?\n/).filter(l => l.trim());
+            if (!lines.length) return;
+
+            // Parse headers
+            const headers = this.parseCSVLine(lines[0]).filter(h => h);
+            this.csv.detectedHeaders = headers;
+
+            // Auto-match columns
+            this.$nextTick(() => {
+              const lower = h => h.toLowerCase();
+              const autoMatch = (field, candidates) => {
+                if (!this.csv.map[field]) {
+                  const match = headers.find(h => candidates.some(c => lower(h).includes(c)));
+                  if (match) this.csv.map[field] = match;
+                }
+              };
+              autoMatch('date',           ['date', 'posted', 'transaction date']);
+              autoMatch('description',    ['description', 'narration', 'details', 'memo', 'narrative', 'particulars']);
+              autoMatch('amount',         ['amount', 'value', 'sum']);
+              autoMatch('debit',          ['debit', 'money out', 'withdrawal', 'dr', 'debit amount']);
+              autoMatch('credit',         ['credit', 'money in', 'deposit', 'cr', 'credit amount']);
+              autoMatch('balance',        ['balance', 'running']);
+              autoMatch('type',           ['type', 'transaction type']);
+              autoMatch('account_name',   ['account name', 'account']);
+              autoMatch('account_number', ['account number', 'account no', 'sort code']);
+              if (this.csv.map.debit || this.csv.map.credit) this.csv.amountMode = 'split';
+
+              // Extract a sample date from first data row
+              const dateCol = this.csv.map.date;
+              if (dateCol && lines.length > 1) {
+                const dataFields = this.parseCSVLine(lines[1]);
+                const dateIdx = headers.indexOf(dateCol);
+                if (dateIdx >= 0) {
+                  this.csv.sampleDate = (dataFields[dateIdx] || '').trim();
+                  this.detectDateFormat();
+                }
+              }
+            });
+          };
+          reader.readAsText(file);
+        },
+
+        onDateColumnChange() {
+          // Re-extract sample date when user changes date column selection
+          const lines = this.csv.rawContent.split(/\r?\n/).filter(l => l.trim());
+          const dateCol = this.csv.map.date;
+          if (!dateCol || lines.length < 2) return;
+          const headers = this.csv.detectedHeaders;
+          const dateIdx = headers.indexOf(dateCol);
+          if (dateIdx < 0) return;
+          const dataFields = this.parseCSVLine(lines[1]);
+          this.csv.sampleDate = (dataFields[dateIdx] || '').trim();
+          this.detectDateFormat();
+        },
+
+        detectDateFormat() {
+          const sample = this.csv.sampleDate;
+          let matched = false;
+          this.dateFormats.forEach(fmt => {
+            const ok = this.tryParseDate(sample, fmt.value);
+            fmt.matchesSample = ok;
+            if (ok && !matched) {
+              this.csv.dateFormat = fmt.value;
+              matched = true;
+            }
+          });
+        },
+
+        clearCsv() {
+          this.csv.file = null;
+          this.csv.fileName = '';
+          this.csv.rawContent = '';
+          this.csv.detectedHeaders = [];
+          this.csv.sampleDate = '';
+          this.csv.map = { date: null, description: null, amount: null, debit: null, credit: null, type: null, balance: null, account_name: null, account_number: null };
+          this.csv.amountMode = 'single';
+          this.csv.importResult = null;
+          this.dateFormats.forEach(f => f.matchesSample = false);
+        },
+
+        async doImport() {
+          if (this.csv.importing || !this.canImport()) return;
+          this.csv.importing = true;
+
+          // Build mapping
+          const raw = { ...this.csv.map };
+          if (this.csv.amountMode === 'single') { raw.debit = null; raw.credit = null; }
+          else { raw.amount = null; }
+          const mapping = Object.fromEntries(Object.entries(raw).filter(([, v]) => v));
+
+          // Save mapping + date format to settings first
+          await fetch('/api/settings', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ csv_column_mapping: mapping, csv_date_format: this.csv.dateFormat }),
+          });
+
+          // Upload CSV
+          const form = new FormData();
+          form.append('file', this.csv.file, this.csv.fileName);
+          try {
+            const resp = await fetch('/api/transactions/import', { method: 'POST', body: form });
+            const data = await resp.json();
+            if (!resp.ok) {
+              alert('Import failed: ' + (data.detail || resp.status));
+            } else {
+              this.csv.importResult = data;
+              this.summary.inserted = data.inserted || 0;
+            }
+          } catch (err) {
+            alert('Import failed: ' + err.message);
+          } finally {
+            this.csv.importing = false;
+          }
+        },
+
+        // ── Step 3 & 4 ────────────────────────────────────────────────────
+
+        async loadPositiveDescriptions() {
+          if (this.paydayItems.length > 0) return;   // already loaded
+          this.paydayLoading = true;
+          try {
+            const resp = await fetch('/api/descriptions?positive=true');
+            const data = await resp.json();
+            const raw = Array.isArray(data?.results) ? data.results : [];
+            // Aggregate by description
+            const descMap = new Map();
+            raw.forEach(r => {
+              if (descMap.has(r.description)) {
+                const e = descMap.get(r.description);
+                e.tx_count += r.tx_count;
+                if (r.min_date < e.min_date) e.min_date = r.min_date;
+                if (r.max_date > e.max_date) e.max_date = r.max_date;
+              } else {
+                descMap.set(r.description, { ...r });
+              }
+            });
+            this.paydayItems = Array.from(descMap.values());
+          } catch (e) {
+            this.paydayItems = [];
+          } finally {
+            this.paydayLoading = false;
+          }
+        },
+
+        selectPayday(description) {
+          this.paydaySelected = description;
+          this.paydayKeyword = description;
+        },
+
+        toggleIncome(description) {
+          const idx = this.incomeSelected.indexOf(description);
+          if (idx >= 0) this.incomeSelected.splice(idx, 1);
+          else this.incomeSelected.push(description);
+        },
+
+        async savePayday() {
+          if (this.paydayKeyword) {
+            this.saving = true;
+            try {
+              await fetch('/api/settings', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pay_day_keyword: this.paydayKeyword }),
+              });
+              this.summary.paydayKeyword = this.paydayKeyword;
+            } finally {
+              this.saving = false;
+            }
+          }
+          this.step = 4;
+        },
+
+        async saveIncomeKeywords() {
+          if (this.incomeSelected.length > 0) {
+            this.saving = true;
+            try {
+              await fetch('/api/settings', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ income_keywords: this.incomeSelected }),
+              });
+              this.summary.incomeCount = this.incomeSelected.length;
+            } finally {
+              this.saving = false;
+            }
+          }
+          this.step = 5;
+        },
+
+        // ── Step 5 ────────────────────────────────────────────────────────
+
+        async saveLogodev() {
+          this.logodevSaving = true;
+          try {
+            await fetch('/api/settings', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                logodev_publishable_key: this.logodevPk,
+                logodev_secret_key: this.logodevSk,
+              }),
+            });
+            this.summary.logodevConfigured = true;
+          } finally {
+            this.logodevSaving = false;
+          }
+          this.step = 6;
+          this.buildSummary();
+        },
+
+        // ── Step 6 ────────────────────────────────────────────────────────
+
+        buildSummary() {
+          // summary fields are set incrementally as each step completes
+        },
+
+        async finish() {
+          this.saving = true;
+          try {
+            await fetch('/api/settings', {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ onboarding_complete: '1' }),
+            });
+            window.location.href = '/analysis';
+          } finally {
+            this.saving = false;
+          }
+        },
+
+        async skipAll() {
+          await fetch('/api/settings', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ onboarding_complete: '1' }),
+          });
+          window.location.href = '/analysis';
+        },
+      };
+    }
+  </script>
+</body>
+</html>

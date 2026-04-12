@@ -27,6 +27,23 @@ async def index():
     return RedirectResponse(url="/analysis", status_code=302)
 
 
+@router.get("/onboarding", response_class=HTMLResponse)
+async def onboarding_page(request: Request):
+    db = await get_db()
+    try:
+        cursor = await db.execute(
+            "SELECT value FROM settings WHERE key = 'onboarding_complete'"
+        )
+        row = await cursor.fetchone()
+        if row and row["value"] == "1":
+            return RedirectResponse(url="/analysis", status_code=302)
+        return request.app.state.templates.TemplateResponse(
+            "onboarding.html", {"request": request}
+        )
+    finally:
+        await db.close()
+
+
 @router.get("/transactions", response_class=HTMLResponse)
 async def transactions_page(request: Request):
     db = await get_db()

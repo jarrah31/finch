@@ -67,6 +67,11 @@ async def update_settings(data: SettingsUpdate):
                 "INSERT OR REPLACE INTO settings (key, value) VALUES ('csv_column_mapping', ?)",
                 (json.dumps(data.csv_column_mapping),),
             )
+        if data.onboarding_complete is not None:
+            await db.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('onboarding_complete', ?)",
+                (data.onboarding_complete,),
+            )
         await db.commit()
 
         if recompute:

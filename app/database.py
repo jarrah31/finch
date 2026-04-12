@@ -109,6 +109,7 @@ DEFAULT_SETTINGS = [
     ("password_hash", ""),
     ("logodev_publishable_key", ""),
     ("logodev_secret_key", ""),
+    ("onboarding_complete", ""),
 ]
 
 

@@ -58,6 +58,7 @@ class SettingsUpdate(BaseModel):
     logodev_publishable_key: Optional[str] = None
     logodev_secret_key: Optional[str] = None
     csv_column_mapping: Optional[dict] = None
+    onboarding_complete: Optional[str] = None
 
 
 class MerchantOverrideUpdate(BaseModel):

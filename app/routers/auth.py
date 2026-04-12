@@ -94,7 +94,7 @@ async def setup_post(
         await db.close()
     request.app.state.setup_required = False
     request.session["authenticated"] = True
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/onboarding", status_code=303)
 
 
 # ── Account / change password ─────────────────────────────────────────────────
