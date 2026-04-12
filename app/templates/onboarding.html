@@ -425,6 +425,42 @@
             <button type="button" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.75rem;padding:0;" @click="clearCsv()">✕ Change</button>
           </div>
 
+          <!-- Raw CSV viewer toggle -->
+          <div style="margin-bottom:1.25rem;">
+            <button
+              type="button"
+              @click="showRawCsv = !showRawCsv"
+              style="display:inline-flex;align-items:center;gap:0.375rem;font-size:0.75rem;color:var(--text-muted);background:none;border:1px solid var(--border-subtle);border-radius:6px;padding:4px 10px;cursor:pointer;transition:border-color 0.15s,color 0.15s;"
+              :style="showRawCsv ? 'border-color:var(--border-default);color:var(--text-secondary)' : ''"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+              </svg>
+              <span x-text="showRawCsv ? 'Hide raw CSV data' : 'View raw CSV data'"></span>
+            </button>
+
+            <div x-show="showRawCsv" style="margin-top:0.625rem;overflow-x:auto;border:1px solid var(--border-subtle);border-radius:8px;max-height:220px;overflow-y:auto;">
+              <table style="width:100%;border-collapse:collapse;font-size:0.7rem;font-family:monospace;">
+                <thead>
+                  <tr style="position:sticky;top:0;background:var(--bg-elevated);z-index:1;">
+                    <template x-for="(h, i) in csv.detectedHeaders" :key="i">
+                      <th style="padding:6px 10px;text-align:left;color:var(--emerald-400,#34d399);border-bottom:1px solid var(--border-default);white-space:nowrap;font-weight:600;" x-text="h"></th>
+                    </template>
+                  </tr>
+                </thead>
+                <tbody>
+                  <template x-for="(row, ri) in csv.sampleRows" :key="ri">
+                    <tr :style="ri % 2 === 0 ? 'background:var(--bg-card)' : 'background:var(--bg-overlay)'">
+                      <template x-for="(cell, ci) in row" :key="ci">
+                        <td style="padding:5px 10px;color:var(--text-secondary);border-bottom:1px solid var(--border-subtle);white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;" x-text="cell"></td>
+                      </template>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <!-- Column mapping -->
           <div style="margin-bottom:1.25rem;">
             <p style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin:0 0 0.375rem;">
@@ -436,10 +472,22 @@
             <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 0.75rem;">Map your bank's CSV headers to the fields Finch expects.</p>
 
             <!-- Amount mode toggle -->
+            <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:0.375rem;flex-wrap:wrap;">
+              <span style="font-size:0.75rem;color:var(--text-muted);">Amount format:</span>
+              <template x-if="csv.amountModeDetected">
+                <span style="font-size:0.7rem;padding:2px 8px;border-radius:20px;background:rgba(16,185,129,0.12);color:var(--emerald-400,#34d399);border:1px solid rgba(16,185,129,0.2);">
+                  ✓ auto-detected
+                </span>
+              </template>
+            </div>
             <div class="ob-amount-mode-toggle">
               <button type="button" class="ob-mode-btn" :class="{ active: csv.amountMode === 'single' }" @click="csv.amountMode = 'single'">Single amount column</button>
               <button type="button" class="ob-mode-btn" :class="{ active: csv.amountMode === 'split' }" @click="csv.amountMode = 'split'">Separate debit &amp; credit columns</button>
             </div>
+            <p style="font-size:0.7rem;color:var(--text-muted);margin:0.25rem 0 0;">
+              <em>Single</em> = one column with signed values (negative = debit).
+              <em>Split</em> = separate "Money Out" and "Money In" columns.
+            </p>
 
             <div class="ob-mapping-grid">
               <!-- Date (required) -->
@@ -879,13 +927,16 @@
         ],
 
         // Step 2 — CSV
+        showRawCsv: false,
         csv: {
           file: null,
           fileName: '',
           rawContent: '',
           detectedHeaders: [],
-          sampleDate: '',   // first date value from data rows
+          sampleRows: [],    // first 10 parsed data rows (arrays of cell strings)
+          sampleDate: '',    // first date value from data rows
           amountMode: 'single',
+          amountModeDetected: false,  // true when auto-detected from data
           map: {
             date: null, description: null, amount: null,
             debit: null, credit: null, type: null,
@@ -1014,6 +1065,10 @@
             const headers = this.parseCSVLine(lines[0]).filter(h => h);
             this.csv.detectedHeaders = headers;
 
+            // Store up to 10 data rows for raw viewer and amount-mode detection
+            const dataLines = lines.slice(1, 11);
+            this.csv.sampleRows = dataLines.map(l => this.parseCSVLine(l));
+
             // Auto-match columns
             this.$nextTick(() => {
               const lower = h => h.toLowerCase();
@@ -1032,15 +1087,45 @@
               autoMatch('type',           ['type', 'transaction type']);
               autoMatch('account_name',   ['account name', 'account']);
               autoMatch('account_number', ['account number', 'account no', 'sort code']);
-              if (this.csv.map.debit || this.csv.map.credit) this.csv.amountMode = 'split';
+
+              // Detect amount mode from data if headers didn't already decide
+              if (this.csv.map.debit || this.csv.map.credit) {
+                // Explicit debit/credit columns found by name → split
+                this.csv.amountMode = 'split';
+                this.csv.amountModeDetected = true;
+              } else if (this.csv.map.amount && this.csv.sampleRows.length > 0) {
+                // Scan the matched amount column for negative values
+                const amtIdx = headers.indexOf(this.csv.map.amount);
+                if (amtIdx >= 0) {
+                  const hasNegative = this.csv.sampleRows.some(row => {
+                    const v = parseFloat((row[amtIdx] || '').replace(/[,\s£$€]/g, ''));
+                    return !isNaN(v) && v < 0;
+                  });
+                  const hasPositive = this.csv.sampleRows.some(row => {
+                    const v = parseFloat((row[amtIdx] || '').replace(/[,\s£$€]/g, ''));
+                    return !isNaN(v) && v > 0;
+                  });
+                  if (hasNegative) {
+                    // Mixed signs → definitely single signed-amount column
+                    this.csv.amountMode = 'single';
+                    this.csv.amountModeDetected = true;
+                  } else if (hasPositive) {
+                    // All positive — could be split or unsigned single; check if any
+                    // other numeric-looking column has values only where this one doesn't
+                    // (mutual exclusivity hint), otherwise stay as single
+                    this.csv.amountMode = 'single';
+                    // Mark as not definitively detected so user gets a softer hint
+                    this.csv.amountModeDetected = false;
+                  }
+                }
+              }
 
               // Extract a sample date from first data row
               const dateCol = this.csv.map.date;
-              if (dateCol && lines.length > 1) {
-                const dataFields = this.parseCSVLine(lines[1]);
+              if (dateCol && this.csv.sampleRows.length > 0) {
                 const dateIdx = headers.indexOf(dateCol);
                 if (dateIdx >= 0) {
-                  this.csv.sampleDate = (dataFields[dateIdx] || '').trim();
+                  this.csv.sampleDate = (this.csv.sampleRows[0][dateIdx] || '').trim();
                   this.detectDateFormat();
                 }
               }
@@ -1050,15 +1135,11 @@
         },
 
         onDateColumnChange() {
-          // Re-extract sample date when user changes date column selection
-          const lines = this.csv.rawContent.split(/\r?\n/).filter(l => l.trim());
           const dateCol = this.csv.map.date;
-          if (!dateCol || lines.length < 2) return;
-          const headers = this.csv.detectedHeaders;
-          const dateIdx = headers.indexOf(dateCol);
+          if (!dateCol || !this.csv.sampleRows.length) return;
+          const dateIdx = this.csv.detectedHeaders.indexOf(dateCol);
           if (dateIdx < 0) return;
-          const dataFields = this.parseCSVLine(lines[1]);
-          this.csv.sampleDate = (dataFields[dateIdx] || '').trim();
+          this.csv.sampleDate = (this.csv.sampleRows[0][dateIdx] || '').trim();
           this.detectDateFormat();
         },
 
@@ -1080,10 +1161,13 @@
           this.csv.fileName = '';
           this.csv.rawContent = '';
           this.csv.detectedHeaders = [];
+          this.csv.sampleRows = [];
           this.csv.sampleDate = '';
           this.csv.map = { date: null, description: null, amount: null, debit: null, credit: null, type: null, balance: null, account_name: null, account_number: null };
           this.csv.amountMode = 'single';
+          this.csv.amountModeDetected = false;
           this.csv.importResult = null;
+          this.showRawCsv = false;
           this.dateFormats.forEach(f => f.matchesSample = false);
         },
 
