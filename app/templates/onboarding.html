@@ -1074,26 +1074,65 @@
 
             // Auto-match columns
             this.$nextTick(() => {
-              const lower = h => h.toLowerCase();
+              const lower = h => h.toLowerCase().trim();
+              // Short candidates (≤3 chars) must match the whole header; longer ones
+              // use substring matching.  This prevents 'cr' matching "description"
+              // and 'dr' matching other incidental headers.
               const autoMatch = (field, candidates) => {
                 if (!this.csv.map[field]) {
-                  const match = headers.find(h => candidates.some(c => lower(h).includes(c)));
+                  const match = headers.find(h =>
+                    candidates.some(c => c.length <= 3 ? lower(h) === c : lower(h).includes(c))
+                  );
                   if (match) this.csv.map[field] = match;
                 }
               };
               autoMatch('date',           ['date', 'posted', 'transaction date']);
               autoMatch('description',    ['description', 'narration', 'details', 'memo', 'narrative', 'particulars']);
               autoMatch('amount',         ['amount', 'value', 'sum']);
-              autoMatch('debit',          ['debit', 'money out', 'withdrawal', 'dr', 'debit amount']);
-              autoMatch('credit',         ['credit', 'money in', 'deposit', 'cr', 'credit amount']);
-              autoMatch('balance',        ['balance', 'running']);
+              autoMatch('debit',          ['debit', 'paid out', 'money out', 'withdrawal', 'dr', 'debit amount']);
+              autoMatch('credit',         ['credit', 'paid in', 'money in', 'deposit', 'cr', 'credit amount']);
+              autoMatch('balance',        ['balance', 'running balance', 'running']);
               autoMatch('type',           ['type', 'transaction type']);
               autoMatch('account_name',   ['account name', 'account']);
               autoMatch('account_number', ['account number', 'account no', 'sort code']);
 
+              // Helper: returns true if a column's values look like a running balance
+              // (monotonically increasing or decreasing in ≥70% of consecutive pairs,
+              //  all values have the same sign).
+              const looksLikeBalance = (colIdx) => {
+                if (colIdx < 0 || this.csv.sampleRows.length < 2) return false;
+                const vals = this.csv.sampleRows
+                  .map(r => parseFloat((r[colIdx] || '').replace(/[,\s£$€]/g, '')))
+                  .filter(v => !isNaN(v));
+                if (vals.length < 2) return false;
+                // All same sign?
+                const allPos = vals.every(v => v >= 0);
+                const allNeg = vals.every(v => v <= 0);
+                if (!allPos && !allNeg) return false;
+                // Monotone check: count consecutive pairs going in the same direction
+                let up = 0, down = 0;
+                for (let i = 1; i < vals.length; i++) {
+                  if (vals[i] > vals[i - 1]) up++;
+                  else if (vals[i] < vals[i - 1]) down++;
+                }
+                const pairs = vals.length - 1;
+                return (up / pairs >= 0.7) || (down / pairs >= 0.7);
+              };
+
               // Detect amount mode from data if headers didn't already decide
               if (this.csv.map.debit || this.csv.map.credit) {
-                // Explicit debit/credit columns found by name → split
+                // Sanity-check: if the matched debit/credit column looks like a running
+                // balance, discard it and fall through to single-column detection.
+                const debitIdx = headers.indexOf(this.csv.map.debit);
+                const creditIdx = headers.indexOf(this.csv.map.credit);
+                const debitIsBalance = this.csv.map.debit && looksLikeBalance(debitIdx);
+                const creditIsBalance = this.csv.map.credit && looksLikeBalance(creditIdx);
+                if (debitIsBalance) this.csv.map.debit = null;
+                if (creditIsBalance) this.csv.map.credit = null;
+              }
+
+              if (this.csv.map.debit || this.csv.map.credit) {
+                // Explicit debit/credit columns found by name and confirmed by data → split
                 this.csv.amountMode = 'split';
                 this.csv.amountModeDetected = true;
               } else if (this.csv.map.amount && this.csv.sampleRows.length > 0) {
