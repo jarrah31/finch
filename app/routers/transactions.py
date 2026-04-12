@@ -67,9 +67,8 @@ async def list_transaction_types():
 @router.get("/api/transactions")
 async def list_transactions(
     account_id: Optional[int] = None,
-    category_id: Optional[int] = None,
-    uncategorized: bool = False,
-    tx_type: Optional[str] = None,
+    category_ids: Optional[str] = None,  # comma-separated; 'uncategorized' is a special value
+    tx_types: Optional[str] = None,       # comma-separated type strings
     pay_period_id: Optional[int] = None,
     search: Optional[str] = None,
     search_in: str = "both",
@@ -86,14 +85,26 @@ async def list_transactions(
         if account_id:
             conditions.append("t.account_id = ?")
             params.append(account_id)
-        if category_id:
-            conditions.append("t.category_id = ?")
-            params.append(category_id)
-        if uncategorized:
-            conditions.append("t.category_id IS NULL")
-        if tx_type:
-            conditions.append("UPPER(t.type) = UPPER(?)")
-            params.append(tx_type)
+        if category_ids:
+            parts = [x.strip() for x in category_ids.split(",") if x.strip()]
+            include_null = "uncategorized" in parts
+            int_ids = [int(x) for x in parts if x != "uncategorized"]
+            cat_clauses = []
+            if include_null:
+                cat_clauses.append("t.category_id IS NULL")
+            if int_ids:
+                placeholders = ",".join("?" * len(int_ids))
+                cat_clauses.append(f"t.category_id IN ({placeholders})")
+                params.extend(int_ids)
+            if cat_clauses:
+                conditions.append("(" + " OR ".join(cat_clauses) + ")")
+        if tx_types:
+            parts = [x.strip() for x in tx_types.split(",") if x.strip()]
+            if parts:
+                conditions.append(
+                    "UPPER(t.type) IN (" + ",".join(["UPPER(?)"] * len(parts)) + ")"
+                )
+                params.extend(parts)
         if search:
             words = search.split()
             if search_in == "description":

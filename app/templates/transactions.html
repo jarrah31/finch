@@ -11,9 +11,6 @@
     importRunning: false,
     filters: {
       account_id: '',
-      category_id: (() => { const c = localStorage.getItem('txn_category') || ''; return c === 'uncategorized' ? '' : c; })(),
-      uncategorized: localStorage.getItem('txn_category') === 'uncategorized',
-      tx_type: '',
       pay_period_id: localStorage.getItem('txn_period_id') || '',
       search: '',
       search_in: 'both',
@@ -22,6 +19,10 @@
       sort_by: 'date',
       sort_dir: 'desc',
     },
+    selectedCategories: [],   /* array of category IDs (number) or 'uncategorized' */
+    selectedTypes: [],         /* array of type strings */
+    categoryPopup: { open: false, top: 0, left: 0, search: '' },
+    typePopup: { open: false, top: 0, left: 0 },
     searchTimeout: null,
     transactions: [],
     total: 0,
@@ -38,17 +39,14 @@
 
     /* custom dropdown state */
     accountDrop: { open: false, search: '', display: 'All accounts' },
-    categoryDrop: { open: false, search: '', display: 'All categories' },
-    typeDrop: { open: false, display: 'All types' },
     periodDrop: { open: false, search: '', display: 'All periods' },
     typeValues: [],
 
     get queryString() {
       const params = new URLSearchParams();
       if (this.filters.account_id) params.set('account_id', this.filters.account_id);
-      if (this.filters.category_id) params.set('category_id', this.filters.category_id);
-      if (this.filters.uncategorized) params.set('uncategorized', 'true');
-      if (this.filters.tx_type) params.set('tx_type', this.filters.tx_type);
+      if (this.selectedCategories.length) params.set('category_ids', this.selectedCategories.join(','));
+      if (this.selectedTypes.length) params.set('tx_types', this.selectedTypes.join(','));
       if (this.filters.pay_period_id) params.set('pay_period_id', this.filters.pay_period_id);
       const trimmedSearch = this.filters.search.trim();
       if (trimmedSearch) params.set('search', trimmedSearch);
@@ -142,18 +140,43 @@
       return opts.filter(o => o.label.toLowerCase().includes(q));
     },
 
-    selectFilter(drop, key, id, label, extra) {
+    selectFilter(drop, key, id, label) {
       this[drop].display = label;
       this[drop].search = '';
       this[drop].open = false;
-      if (extra) {
-        Object.assign(this.filters, extra);
-        if ('category_id' in extra || 'uncategorized' in extra)
-          localStorage.setItem('txn_category', extra.uncategorized ? 'uncategorized' : (extra.category_id || ''));
-      } else {
-        this.filters[key] = id;
-        if (key === 'pay_period_id') localStorage.setItem('txn_period_id', String(id));
-      }
+      this.filters[key] = id;
+      if (key === 'pay_period_id') localStorage.setItem('txn_period_id', String(id));
+      this.resetPage();
+    },
+
+    openCategoryFilter(btn) {
+      const rect = btn.getBoundingClientRect();
+      this.categoryPopup.top = rect.bottom + 4;
+      this.categoryPopup.left = rect.left;
+      this.categoryPopup.open = !this.categoryPopup.open;
+      this.categoryPopup.search = '';
+      if (this.categoryPopup.open) this.typePopup.open = false;
+    },
+
+    openTypeFilter(btn) {
+      const rect = btn.getBoundingClientRect();
+      this.typePopup.top = rect.bottom + 4;
+      this.typePopup.left = rect.left;
+      this.typePopup.open = !this.typePopup.open;
+      if (this.typePopup.open) this.categoryPopup.open = false;
+    },
+
+    toggleCategory(val) {
+      const idx = this.selectedCategories.indexOf(val);
+      if (idx === -1) this.selectedCategories.push(val);
+      else this.selectedCategories.splice(idx, 1);
+      this.resetPage();
+    },
+
+    toggleType(val) {
+      const idx = this.selectedTypes.indexOf(val);
+      if (idx === -1) this.selectedTypes.push(val);
+      else this.selectedTypes.splice(idx, 1);
       this.resetPage();
     },
 
@@ -177,13 +200,10 @@
       this.editingCategory = txId;
     },
 
-    filterByCategory(categoryId, displayLabel) {
-      this.filters.category_id = categoryId;
-      this.filters.uncategorized = false;
+    filterByCategory(categoryId) {
+      this.selectedCategories = categoryId ? [categoryId] : [];
       this.filters.search = '';
       this.filters.search_in = 'both';
-      this.categoryDrop.display = displayLabel;
-      localStorage.setItem('txn_category', String(categoryId));
       this.resetPage();
     },
 
@@ -397,9 +417,6 @@
   }"
   x-init="
     (function() {
-      const savedCat = localStorage.getItem('txn_category') || '';
-      if (savedCat === 'uncategorized') { categoryDrop.display = 'Uncategorized'; }
-      else if (savedCat) { const cat = categories.find(c => c.id == savedCat); if (cat) categoryDrop.display = catDisplayName(cat); }
       const savedPeriod = localStorage.getItem('txn_period_id') || '';
       if (savedPeriod) { const p = periods.find(p => p.id == savedPeriod); if (p) periodDrop.display = p.label; }
     })();
@@ -613,67 +630,6 @@
         </div>
       </div>
 
-      <!-- Category filter -->
-      <div class="form-group">
-        <label class="form-label">Category</label>
-        <div style="position:relative;" @click.outside="categoryDrop.open = false">
-          <div style="position:relative;" class="input-with-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="input-icon" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            <input type="text" class="form-input" style="padding-right:36px;"
-              :value="categoryDrop.search || (!categoryDrop.open ? categoryDrop.display : '')"
-              :placeholder="categoryDrop.open ? categoryDrop.display : 'Search categories…'"
-              @focus="categoryDrop.open = true; categoryDrop.search = ''"
-              @input="categoryDrop.search = $event.target.value; categoryDrop.open = true"
-              @keydown.escape="categoryDrop.open = false"
-              autocomplete="off" aria-label="Filter by category">
-            <button type="button" class="btn-icon" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:24px;height:24px;" @click.stop="categoryDrop.open = !categoryDrop.open" tabindex="-1">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-          </div>
-          <div x-show="categoryDrop.open" style="position:absolute;z-index:100;top:calc(100% + 3px);left:0;right:0;max-height:260px;overflow-y:auto;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:var(--radius-md);box-shadow:0 8px 24px rgba(0,0,0,0.5);">
-            <ul style="list-style:none;margin:0;padding:0.25rem;">
-              <template x-for="opt in catFilterOptions(categoryDrop.search)" :key="opt.id">
-                <li
-                  x-text="opt.label"
-                  @click="selectFilter('categoryDrop', null, opt.id, opt.label, opt.id === '' ? { category_id: '', uncategorized: false } : opt.id === 'uncategorized' ? { category_id: '', uncategorized: true } : { category_id: opt.id, uncategorized: false })"
-                  style="padding:0.5rem 0.75rem;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--text-sm);color:var(--text-secondary);"
-                  :style="{ background: (opt.id === '' && !filters.uncategorized && filters.category_id === '') || (opt.id === 'uncategorized' && filters.uncategorized) || (opt.id != '' && opt.id !== 'uncategorized' && filters.category_id == opt.id) ? 'var(--bg-overlay)' : 'transparent' }"
-                  @mouseenter="$el.style.background='var(--bg-overlay)'"
-                  @mouseleave="$el.style.background=''">
-                </li>
-              </template>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      <!-- Type filter -->
-      <div class="form-group" x-show="typeValues.length > 0">
-        <label class="form-label">Type</label>
-        <div style="position:relative;" @click.outside="typeDrop.open = false">
-          <div style="position:relative;" class="input-with-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="input-icon" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-            <input type="text" class="form-input" style="padding-right:36px;cursor:pointer;"
-              :value="typeDrop.open ? '' : typeDrop.display"
-              :placeholder="typeDrop.open ? typeDrop.display : ''"
-              @focus="typeDrop.open = true"
-              @keydown.escape="typeDrop.open = false"
-              autocomplete="off" aria-label="Filter by transaction type" readonly>
-            <button type="button" class="btn-icon" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:24px;height:24px;" @click.stop="typeDrop.open = !typeDrop.open" tabindex="-1">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-            </button>
-          </div>
-          <div x-show="typeDrop.open" style="position:absolute;z-index:100;top:calc(100% + 3px);left:0;right:0;max-height:220px;overflow-y:auto;background:var(--bg-elevated);border:1px solid var(--border-default);border-radius:var(--radius-md);box-shadow:0 8px 24px rgba(0,0,0,0.5);">
-            <ul style="list-style:none;margin:0;padding:0.25rem;">
-              <li @click="selectFilter('typeDrop','tx_type','','All types')" style="padding:0.5rem 0.75rem;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--text-sm);color:var(--text-secondary);" :style="{ background: filters.tx_type === '' ? 'var(--bg-overlay)' : 'transparent' }" @mouseenter="$el.style.background='var(--bg-overlay)'" @mouseleave="$el.style.background=filters.tx_type===''?'var(--bg-overlay)':'transparent'">All types</li>
-              <template x-for="t in typeValues" :key="t">
-                <li @click="selectFilter('typeDrop','tx_type',t,t)" x-text="t" style="padding:0.5rem 0.75rem;border-radius:var(--radius-sm);cursor:pointer;font-size:var(--text-sm);color:var(--text-secondary);font-variant-numeric:tabular-nums;text-transform:uppercase;letter-spacing:0.04em;" :style="{ background: filters.tx_type === t ? 'var(--bg-overlay)' : 'transparent' }" @mouseenter="$el.style.background='var(--bg-overlay)'" @mouseleave="$el.style.background=filters.tx_type===t?'var(--bg-overlay)':'transparent'"></li>
-              </template>
-            </ul>
-          </div>
-        </div>
-      </div>
-
       <!-- Period filter -->
       <div class="form-group">
         <label class="form-label">Period</label>
@@ -739,9 +695,10 @@
         <button
           class="btn btn-secondary"
           @click="
-            filters = { account_id: '', category_id: '', uncategorized: false, tx_type: '', pay_period_id: '', search: '', search_in: 'both', page: 1, per_page: parseInt(localStorage.getItem('txn_per_page') || '50'), sort_by: 'date', sort_dir: 'desc' };
-            localStorage.removeItem('txn_category'); localStorage.removeItem('txn_period_id'); localStorage.removeItem('txn_page');
-            accountDrop.display = 'All accounts'; categoryDrop.display = 'All categories'; typeDrop.display = 'All types'; periodDrop.display = 'All periods';
+            filters = { account_id: '', pay_period_id: '', search: '', search_in: 'both', page: 1, per_page: parseInt(localStorage.getItem('txn_per_page') || '50'), sort_by: 'date', sort_dir: 'desc' };
+            selectedCategories = []; selectedTypes = [];
+            localStorage.removeItem('txn_period_id'); localStorage.removeItem('txn_page');
+            accountDrop.display = 'All accounts'; periodDrop.display = 'All periods';
             loadTransactions();
           "
           aria-label="Clear all filters"
@@ -845,8 +802,22 @@
             <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'date' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'date' && filters.sort_dir === 'desc' }" @click="sortBy('date')" aria-label="Sort by date">Date</th>
             <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'description' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'description' && filters.sort_dir === 'desc' }" @click="sortBy('description')" aria-label="Sort by description">Description</th>
             <th scope="col" class="sortable text-right" :class="{ 'sort-asc': filters.sort_by === 'amount' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'amount' && filters.sort_dir === 'desc' }" @click="sortBy('amount')" aria-label="Sort by amount">Amount</th>
-            <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'type' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'type' && filters.sort_dir === 'desc' }" @click="sortBy('type')" aria-label="Sort by type">Type</th>
-            <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'category' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'category' && filters.sort_dir === 'desc' }" @click="sortBy('category')" aria-label="Sort by category">Category</th>
+            <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'type' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'type' && filters.sort_dir === 'desc' }" @click="sortBy('type')" aria-label="Sort by type">
+              <span class="th-inner">
+                Type
+                <button x-show="typeValues.length > 0" class="col-filter-btn" :class="{ 'col-filter-btn--active': selectedTypes.length > 0 }" @click.stop="openTypeFilter($el)" :title="selectedTypes.length ? selectedTypes.join(', ') : 'Filter by type'" aria-label="Filter by type">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 .8 1.6L14 12.42V20a1 1 0 0 1-1.45.9l-4-2A1 1 0 0 1 8 18v-5.58L3.2 5.6A1 1 0 0 1 3 4z"/></svg>
+                </button>
+              </span>
+            </th>
+            <th scope="col" class="sortable" :class="{ 'sort-asc': filters.sort_by === 'category' && filters.sort_dir === 'asc', 'sort-desc': filters.sort_by === 'category' && filters.sort_dir === 'desc' }" @click="sortBy('category')" aria-label="Sort by category">
+              <span class="th-inner">
+                Category
+                <button class="col-filter-btn" :class="{ 'col-filter-btn--active': selectedCategories.length > 0 }" @click.stop="openCategoryFilter($el)" :title="selectedCategories.length ? selectedCategories.length + ' selected' : 'Filter by category'" aria-label="Filter by category">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 .8 1.6L14 12.42V20a1 1 0 0 1-1.45.9l-4-2A1 1 0 0 1 8 18v-5.58L3.2 5.6A1 1 0 0 1 3 4z"/></svg>
+                </button>
+              </span>
+            </th>
             <th scope="col" class="text-right">Actions</th>
           </tr>
         </thead>
@@ -927,7 +898,7 @@
                       <span class="badge-button">
                         <button
                           :class="'badge badge--cat-colored ' + catColorClass(tx.category_id, categories)"
-                          @click="filterByCategory(tx.category_id, tx.parent_category_name ? tx.parent_category_name + ' › ' + tx.category_name : tx.category_name)"
+                          @click="filterByCategory(tx.category_id)"
                           :title="'Filter by ' + (tx.parent_category_name ? tx.parent_category_name + ' › ' + tx.category_name : tx.category_name)"
                           :aria-label="'Filter by category: ' + (tx.parent_category_name ? tx.parent_category_name + ' › ' + tx.category_name : tx.category_name)"
                           x-text="tx.parent_category_name ? tx.parent_category_name + ' › ' + tx.category_name : tx.category_name"
@@ -1131,6 +1102,62 @@
         <button class="btn btn--secondary" @click="closeLogoModal()">Cancel</button>
       </div>
     </div>
+  </div>
+
+  <!-- ── Column-filter popups ────────────────────────────────────────── -->
+
+  <!-- Transparent backdrop — click anywhere outside a popup to close it -->
+  <div
+    x-show="categoryPopup.open || typePopup.open"
+    @click="categoryPopup.open = false; typePopup.open = false"
+    style="position:fixed;inset:0;z-index:299;"
+  ></div>
+
+  <!-- Category multi-select popup -->
+  <div
+    x-show="categoryPopup.open"
+    @click.stop
+    @keydown.escape.window="categoryPopup.open = false"
+    :style="{ position: 'fixed', top: categoryPopup.top + 'px', left: categoryPopup.left + 'px', zIndex: 300 }"
+    class="col-filter-popup"
+  >
+    <div class="col-filter-popup__header">
+      <span class="col-filter-popup__title">Category</span>
+      <button x-show="selectedCategories.length > 0" @click="selectedCategories = []; resetPage()" class="col-filter-popup__clear">Clear</button>
+    </div>
+    <div class="col-filter-popup__search">
+      <input type="search" x-model="categoryPopup.search" placeholder="Search…" autocomplete="off" class="col-filter-popup__search-input" @click.stop>
+    </div>
+    <ul class="col-filter-popup__list">
+      <template x-for="opt in catFilterOptions(categoryPopup.search).filter(o => o.id !== '')" :key="String(opt.id)">
+        <li class="col-filter-popup__item" @click="toggleCategory(opt.id)">
+          <input type="checkbox" class="col-filter-popup__check" :checked="selectedCategories.includes(opt.id)" @click.stop="toggleCategory(opt.id)" tabindex="-1">
+          <span x-text="opt.label"></span>
+        </li>
+      </template>
+    </ul>
+  </div>
+
+  <!-- Type multi-select popup -->
+  <div
+    x-show="typePopup.open"
+    @click.stop
+    @keydown.escape.window="typePopup.open = false"
+    :style="{ position: 'fixed', top: typePopup.top + 'px', left: typePopup.left + 'px', zIndex: 300 }"
+    class="col-filter-popup"
+  >
+    <div class="col-filter-popup__header">
+      <span class="col-filter-popup__title">Type</span>
+      <button x-show="selectedTypes.length > 0" @click="selectedTypes = []; resetPage()" class="col-filter-popup__clear">Clear</button>
+    </div>
+    <ul class="col-filter-popup__list" style="max-height:280px;">
+      <template x-for="t in typeValues" :key="t">
+        <li class="col-filter-popup__item" @click="toggleType(t)">
+          <input type="checkbox" class="col-filter-popup__check" :checked="selectedTypes.includes(t)" @click.stop="toggleType(t)" tabindex="-1">
+          <span x-text="t" class="col-filter-popup__type-label"></span>
+        </li>
+      </template>
+    </ul>
   </div>
 
 </div>
