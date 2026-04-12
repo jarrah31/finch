@@ -2822,6 +2822,7 @@ select.input,
 /* ── Coming Up / thirds grid ── */
 @media (min-width: 1100px) {
   .breakdown-grid--thirds { grid-template-columns: 1fr 2fr; }
+  .breakdown-grid--thirds .col-span-full { grid-column: 1 / -1; }
 }
 .section-header__meta { font-size: 0.78rem; color: var(--text-muted); }
 .coming-up-list {

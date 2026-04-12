@@ -542,7 +542,9 @@
             </section>
           </template>
 
-          <section class="card" aria-label="Recent transactions">
+          <section class="card"
+                   :class="(tabs.overview.data.upcoming_subscriptions || []).length === 0 ? 'col-span-full' : ''"
+                   aria-label="Recent transactions">
             <div class="section-header">
               <h2 class="card-title">Recent Transactions</h2>
               <a href="/transactions" class="section-header__link">View all &rarr;</a>
