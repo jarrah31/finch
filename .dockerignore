@@ -6,9 +6,9 @@ __pycache__/
 *.pyo
 
 # ── Runtime data & secrets (never bake into the image) ───────────────────────
-/data/
-# Explicitly keep the app's bundled data package (merchant dictionary etc.)
-!app/data/
+# NOTE: no entry for data/ — the Dockerfile only does "COPY app/ ./app/" so
+# the runtime data/ directory at the repo root is never sent to the image.
+# An unanchored "data/" pattern would accidentally exclude app/data/ too.
 app/static/logos/*.png
 .env
 .env.local
